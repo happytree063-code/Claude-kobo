@@ -261,6 +261,33 @@ footer a:hover { text-decoration: underline; }
 .toast.success { background: #27ae60; }
 .toast.error   { background: #c0392b; }
 
+/* ── iOS "Add to Home Screen" hint ───────────────────── */
+.ios-hint {
+  position: fixed;
+  bottom: 1rem;
+  left: 1rem;
+  right: 1rem;
+  background: var(--kobo-blue);
+  color: #fff;
+  padding: .85rem 1rem;
+  border-radius: 12px;
+  font-size: .85rem;
+  display: flex;
+  align-items: center;
+  gap: .75rem;
+  z-index: 1000;
+  box-shadow: 0 4px 20px rgba(0,0,0,.3);
+}
+.ios-hint span { flex: 1; line-height: 1.5; }
+.ios-hint button {
+  background: none;
+  border: none;
+  color: rgba(255,255,255,.7);
+  font-size: 1.1rem;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
 /* ── Responsive ──────────────────────────────────────── */
 @media (max-width: 600px) {
   header { padding: 1rem; }

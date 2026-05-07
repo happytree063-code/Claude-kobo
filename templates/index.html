@@ -4,6 +4,16 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Kobo 99元週特賣書單</title>
+
+  <!-- PWA -->
+  <link rel="manifest" href="/static/manifest.json" />
+  <meta name="theme-color" content="#0a2f5e" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Kobo99" />
+  <link rel="apple-touch-icon" href="/static/icon-192.png" />
+
   <link rel="stylesheet" href="/static/style.css" />
 </head>
 <body>
@@ -168,6 +178,27 @@
       t.className = `toast ${type}`;
       clearTimeout(t._timer);
       t._timer = setTimeout(() => { t.className = 'toast hidden'; }, 4000);
+    }
+
+    // Register service worker for PWA
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/static/sw.js')
+        .then(reg => console.log('SW registered', reg.scope))
+        .catch(err => console.warn('SW registration failed', err));
+    }
+
+    // Prompt iOS users to add to home screen
+    const isIos = /iphone|ipad|ipod/i.test(navigator.userAgent);
+    const isStandalone = window.navigator.standalone;
+    const dismissed = sessionStorage.getItem('iosHintDismissed');
+    if (isIos && !isStandalone && !dismissed) {
+      const hint = document.createElement('div');
+      hint.className = 'ios-hint';
+      hint.innerHTML = `
+        <span>點 Safari 底部的 <strong>分享</strong> 按鈕，再選「<strong>加入主畫面</strong>」即可安裝 App</span>
+        <button onclick="this.parentElement.remove();sessionStorage.setItem('iosHintDismissed','1')">✕</button>
+      `;
+      document.body.appendChild(hint);
     }
   </script>
 </body>
