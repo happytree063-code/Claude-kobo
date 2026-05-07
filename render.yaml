@@ -1,0 +1,12 @@
+services:
+  - type: web
+    name: kobo-99-deals
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: python run.py
+    plan: free
+    envVars:
+      - key: RENDER
+        value: "true"
+      - key: PYTHON_VERSION
+        value: "3.11.0"

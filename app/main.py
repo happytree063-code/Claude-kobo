@@ -1,4 +1,5 @@
 import logging
+import asyncio
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request, HTTPException
@@ -19,11 +20,25 @@ templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
 scheduler = create_scheduler()
 
 
+async def _auto_refresh_if_empty():
+    """On cold start, fetch data if DB is empty."""
+    await asyncio.sleep(3)  # let the server finish starting
+    books, _ = get_this_week_books()
+    if not books:
+        logger.info("DB is empty on startup — auto-fetching this week's deals")
+        try:
+            loop = asyncio.get_event_loop()
+            await loop.run_in_executor(None, refresh_weekly_deals)
+        except Exception as e:
+            logger.warning("Auto-fetch on startup failed: %s", e)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
     scheduler.start()
     logger.info("Scheduler started")
+    asyncio.create_task(_auto_refresh_if_empty())
     yield
     scheduler.shutdown()
     logger.info("Scheduler stopped")
