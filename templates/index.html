@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Kobo 99元週特賣書單</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <header>
+    <div class="header-inner">
+      <div class="logo-area">
+        <span class="logo-icon">📚</span>
+        <div>
+          <h1>Kobo 99元週特賣</h1>
+          <p class="tagline">每週四更新 · 本週最超值電子書</p>
+        </div>
+      </div>
+      <div class="actions">
+        <button id="refreshBtn" class="btn-refresh" onclick="triggerRefresh()">
+          <span class="icon">↻</span> 立即更新書單
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <!-- Week selector -->
+    <section class="week-nav">
+      <span class="week-label">選擇週次：</span>
+      <div class="week-pills">
+        {% for w in all_weeks %}
+        <a href="/week/{{ w }}"
+           class="week-pill {% if w == selected_week %}active{% endif %}">
+          {{ w }}
+        </a>
+        {% endfor %}
+      </div>
+    </section>
+
+    <!-- Current week header -->
+    <section class="week-header">
+      <h2>
+        📅 {{ week_date }} 當週特賣書單
+        <span class="book-count">({{ books | length }} 本)</span>
+      </h2>
+    </section>
+
+    <!-- Book cards -->
+    {% if books %}
+    <section class="book-grid">
+      {% for book in books %}
+      <article class="book-card">
+
+        <!-- Cover -->
+        <div class="cover-wrap">
+          {% if book.cover_url %}
+          <img src="{{ book.cover_url }}" alt="{{ book.title }}" class="cover-img"
+               onerror="this.src='/static/no-cover.svg'" />
+          {% else %}
+          <div class="cover-placeholder">
+            <span>📖</span>
+          </div>
+          {% endif %}
+          <span class="price-badge">NT$99</span>
+        </div>
+
+        <!-- Info -->
+        <div class="book-info">
+          <h3 class="book-title">
+            {% if book.kobo_url %}
+            <a href="{{ book.kobo_url }}" target="_blank" rel="noopener">{{ book.title }}</a>
+            {% else %}
+            {{ book.title }}
+            {% endif %}
+          </h3>
+          {% if book.author %}
+          <p class="book-author">✍️ {{ book.author }}</p>
+          {% endif %}
+
+          {% if book.original_price %}
+          <p class="book-price">
+            <s class="orig-price">NT${{ book.original_price }}</s>
+            <strong class="deal-price">→ NT$99</strong>
+          </p>
+          {% endif %}
+
+          {% if book.description %}
+          <p class="book-desc">{{ book.description[:120] }}{% if book.description|length > 120 %}…{% endif %}</p>
+          {% endif %}
+
+          <!-- Ratings -->
+          {% if book.ratings %}
+          <div class="ratings">
+            <p class="ratings-title">各平台評分</p>
+            <ul class="rating-list">
+              {% for r in book.ratings %}
+              <li class="rating-item">
+                <span class="rating-source">{{ r.source }}</span>
+                {% if r.score %}
+                <span class="rating-score">⭐ {{ r.score }}</span>
+                {% else %}
+                <span class="rating-score no-score">尚無評分</span>
+                {% endif %}
+                {% if r.review_count %}
+                <span class="rating-count">({{ r.review_count }} 則評論)</span>
+                {% endif %}
+                {% if r.source_url %}
+                <a href="{{ r.source_url }}" target="_blank" rel="noopener" class="rating-link">查看</a>
+                {% endif %}
+              </li>
+              {% endfor %}
+            </ul>
+          </div>
+          {% else %}
+          <p class="no-ratings">評分資料尚未載入，點「立即更新書單」可取得評分。</p>
+          {% endif %}
+
+          {% if book.kobo_url %}
+          <a href="{{ book.kobo_url }}" target="_blank" rel="noopener" class="btn-buy">
+            前往 Kobo 購買
+          </a>
+          {% endif %}
+        </div>
+
+      </article>
+      {% endfor %}
+    </section>
+
+    {% else %}
+    <section class="empty-state">
+      <div class="empty-icon">📭</div>
+      <h3>本週書單尚未載入</h3>
+      <p>點下方按鈕從 Kobo 抓取最新 99 元特賣書單</p>
+      <button class="btn-refresh big" onclick="triggerRefresh()">↻ 立即抓取書單</button>
+    </section>
+    {% endif %}
+  </main>
+
+  <footer>
+    <p>書單來源：<a href="https://www.kobo.com/zh/blog" target="_blank">Kobo 台灣部落格</a>（每週四更新）</p>
+    <p>評分來源：Google Books・博客來・讀冊生活</p>
+  </footer>
+
+  <div id="toast" class="toast hidden"></div>
+
+  <script>
+    async function triggerRefresh() {
+      const btn = document.getElementById('refreshBtn');
+      btn.disabled = true;
+      btn.innerHTML = '<span class="icon spin">↻</span> 更新中…';
+      showToast('正在從 Kobo 抓取書單，請稍候…', 'info');
+      try {
+        const res = await fetch('/api/refresh', { method: 'POST' });
+        const data = await res.json();
+        showToast(`✅ 更新完成！本週共 ${data.books_updated} 本書`, 'success');
+        setTimeout(() => location.reload(), 1500);
+      } catch (e) {
+        showToast('❌ 更新失敗，請稍後再試', 'error');
+        btn.disabled = false;
+        btn.innerHTML = '<span class="icon">↻</span> 立即更新書單';
+      }
+    }
+
+    function showToast(msg, type) {
+      const t = document.getElementById('toast');
+      t.textContent = msg;
+      t.className = `toast ${type}`;
+      clearTimeout(t._timer);
+      t._timer = setTimeout(() => { t.className = 'toast hidden'; }, 4000);
+    }
+  </script>
+</body>
+</html>
