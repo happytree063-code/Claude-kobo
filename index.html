@@ -531,7 +531,15 @@ const COLORS = [
 ];
 
 // Sheet category → app category mapping
-const LIQUID_CATEGORIES = ['cash', 'taiwan stock', 'us stock'];
+// 投資資金: Taiwan Stock, US Stock, Crypto
+// 儲備金: Cash + everything else (savings insurance etc.)
+const INVEST_CATEGORIES = ['taiwan stock', 'us stock'];
+const INVEST_KEYWORDS   = ['加密', 'crypto', 'bitcoin'];
+function isInvestAsset(a) {
+  const cat  = (a.category || '').toLowerCase();
+  const name = (a.name || '').toLowerCase();
+  return INVEST_CATEGORIES.includes(cat) || INVEST_KEYWORDS.some(k => name.includes(k));
+}
 
 // ── State ──────────────────────────────────────────────────────────────────────
 let appData;
@@ -555,17 +563,17 @@ function makeDefault() {
     stockDetails: {},
     categories: [
       {
-        id: uid(), name: '流動資金',
+        id: uid(), name: '投資資金',
         assets: [
-          { id: uid(), name: '現金總額', amount: 0, currency: 'TWD' },
           { id: uid(), name: '台股總額', amount: 0, currency: 'TWD' },
-          { id: uid(), name: '美股總額', amount: 0, currency: 'TWD' }
+          { id: uid(), name: '美股總額', amount: 0, currency: 'TWD' },
+          { id: uid(), name: '加密貨幣', amount: 0, currency: 'TWD' }
         ]
       },
       {
-        id: uid(), name: '投資',
+        id: uid(), name: '儲備金',
         assets: [
-          { id: uid(), name: '加密貨幣',   amount: 0, currency: 'TWD' },
+          { id: uid(), name: '現金總額',   amount: 0, currency: 'TWD' },
           { id: uid(), name: '美元儲蓄險', amount: 0, currency: 'TWD' },
           { id: uid(), name: '台幣儲蓄險', amount: 0, currency: 'TWD' }
         ]
@@ -679,28 +687,30 @@ function applySheetData(data) {
   // Save stock details for drill-down view
   appData.stockDetails = data.stockDetails || {};
 
-  const liquidAssets = [];
   const investAssets = [];
+  const reserveAssets = [];
 
   data.assets.forEach(a => {
     const asset = { id: uid(), name: a.name, amount: a.amount, currency: 'TWD', sheetCategory: a.category };
-    if (LIQUID_CATEGORIES.includes((a.category || '').toLowerCase())) {
-      liquidAssets.push(asset);
-    } else {
+    if (isInvestAsset(a)) {
       investAssets.push(asset);
+    } else {
+      reserveAssets.push(asset);
     }
   });
 
   // Preserve existing category IDs if possible
   const findCat = name => appData.categories.find(c => c.name === name);
-  const liquid = findCat('流動資金') || { id: uid(), name: '流動資金' };
-  const invest = findCat('投資')    || { id: uid(), name: '投資' };
-  liquid.assets = liquidAssets;
-  invest.assets = investAssets;
+  const invest  = findCat('投資資金') || findCat('流動資金') || { id: uid(), name: '投資資金' };
+  const reserve = findCat('儲備金')   || findCat('投資')    || { id: uid(), name: '儲備金' };
+  invest.name  = '投資資金';
+  reserve.name = '儲備金';
+  invest.assets  = investAssets;
+  reserve.assets = reserveAssets;
 
   appData.categories = [];
-  if (liquidAssets.length) appData.categories.push(liquid);
-  if (investAssets.length) appData.categories.push(invest);
+  if (investAssets.length)  appData.categories.push(invest);
+  if (reserveAssets.length) appData.categories.push(reserve);
 }
 
 // ── Script URL modal ───────────────────────────────────────────────────────────
