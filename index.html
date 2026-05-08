@@ -254,6 +254,41 @@
     }
     .fade-up { animation: fadeUp 0.35s ease; }
     .empty-hint { text-align: center; padding: 28px 0 12px; color: var(--text-secondary); font-size: 14px; }
+
+    /* ── Detail View (stock drill-down) ──────────────────────────── */
+    #detail-view {
+      position: fixed; top: 0; bottom: 0;
+      left: 50%; width: 100%; max-width: 430px;
+      background: var(--bg); z-index: 150;
+      overflow-y: auto; -webkit-overflow-scrolling: touch;
+      transition: transform 0.32s cubic-bezier(0.32,0.72,0,1);
+      transform: translateX(100%);
+    }
+    #detail-view.open { transform: translateX(-50%); }
+    .detail-header {
+      position: sticky; top: 0;
+      background: rgba(242,242,247,0.9);
+      backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+      padding: max(env(safe-area-inset-top,0px),16px) 16px 12px;
+      display: flex; align-items: center; gap: 10px;
+      border-bottom: 1px solid rgba(0,0,0,0.07); z-index: 1;
+    }
+    .detail-back-btn {
+      background: none; border: none; cursor: pointer;
+      font-size: 30px; color: var(--accent-green); font-weight: 300;
+      padding: 0 4px 0 0; line-height: 1; flex-shrink: 0;
+    }
+    .detail-back-btn:active { opacity: 0.6; }
+    .detail-title-text { font-size: 17px; font-weight: 700; flex: 1; }
+    .detail-content { padding: 16px 16px calc(28px + env(safe-area-inset-bottom,0px)); }
+    .detail-stock-row {
+      display: flex; justify-content: space-between; align-items: center;
+      padding: 10px 0; border-top: 1px solid var(--border);
+    }
+    .detail-stock-name { font-size: 14px; font-weight: 500; }
+    .detail-stock-right { display: flex; align-items: center; gap: 8px; }
+    .detail-stock-amount { font-size: 14px; font-weight: 600; }
+    .detail-stock-pct { font-size: 11px; color: var(--text-secondary); min-width: 38px; text-align: right; }
   </style>
 </head>
 <body>
@@ -386,6 +421,33 @@
   </button>
 </div>
 
+<!-- ── DETAIL VIEW (stock drill-down) ────────────────────────────── -->
+<div id="detail-view">
+  <div class="detail-header">
+    <button class="detail-back-btn" onclick="closeDetail()">‹</button>
+    <span id="detail-title" class="detail-title-text">持倉明細</span>
+  </div>
+  <div class="detail-content">
+    <div class="chart-container" style="margin-bottom:12px">
+      <div class="chart-section-title" id="detail-cat-label">持倉配置</div>
+      <div style="text-align:center;margin-bottom:20px">
+        <div style="font-size:12px;color:var(--text-secondary)">持倉總額</div>
+        <div id="detail-total" style="font-size:36px;font-weight:700;letter-spacing:-1px;margin-top:4px">-</div>
+      </div>
+      <div class="chart-wrap">
+        <canvas id="detail-donut-chart"></canvas>
+        <div class="chart-center">
+          <div class="chart-center-label" id="detail-center-label">持倉</div>
+          <div class="chart-center-value" id="detail-center-val">-</div>
+        </div>
+      </div>
+    </div>
+    <div class="card" id="detail-stock-list">
+      <div class="empty-hint">請更新 Apps Script 並重新同步以查看個股資料</div>
+    </div>
+  </div>
+</div>
+
 <!-- ── ASSET MODAL ───────────────────────────────────────────────── -->
 <div class="modal-overlay" id="add-modal" onclick="closeModalOnBg(event,'add-modal')">
   <div class="modal">
@@ -490,6 +552,7 @@ function makeDefault() {
     scriptUrl: '',
     lastSynced: null,
     lastUpdated: null,
+    stockDetails: {},
     categories: [
       {
         id: uid(), name: '流動資金',
@@ -522,6 +585,7 @@ function loadData() {
         cat.assets.forEach(a => { if (!a.id) a.id = uid(); });
       });
       if (!('scriptUrl' in appData)) appData.scriptUrl = '';
+      if (!appData.stockDetails) appData.stockDetails = {};
     } else {
       appData = makeDefault();
     }
@@ -607,11 +671,19 @@ async function syncFromSheet() {
 function applySheetData(data) {
   if (!data || !Array.isArray(data.assets)) return;
 
+  // Update exchange rate if sheet provides TWD/USD ratio (e.g. 31.35)
+  if (data.exchangeRate && typeof data.exchangeRate === 'number' && data.exchangeRate > 1) {
+    appData.exchangeRate = 1 / data.exchangeRate;
+  }
+
+  // Save stock details for drill-down view
+  appData.stockDetails = data.stockDetails || {};
+
   const liquidAssets = [];
   const investAssets = [];
 
   data.assets.forEach(a => {
-    const asset = { id: uid(), name: a.name, amount: a.amount, currency: 'TWD' };
+    const asset = { id: uid(), name: a.name, amount: a.amount, currency: 'TWD', sheetCategory: a.category };
     if (LIQUID_CATEGORIES.includes((a.category || '').toLowerCase())) {
       liquidAssets.push(asset);
     } else {
@@ -692,11 +764,15 @@ function renderHome() {
     const rows = cat.assets.map(a => {
       const aDisp = toDisplay(a.amount, a.currency);
       const aPct = total > 0 ? (aDisp / total * 100).toFixed(1) : '0.0';
-      return `<div class="asset-row" onclick="openEditModal('${a.id}')">
+      const sc = a.sheetCategory;
+      const hasDetail = sc === 'Taiwan Stock' || sc === 'US Stock';
+      const onclick = hasDetail ? `openDetail('${sc}')` : `openEditModal('${a.id}')`;
+      return `<div class="asset-row" onclick="${onclick}">
         <span class="asset-name">${a.name}</span>
         <div class="asset-right">
           <span class="asset-amount">${fmt(aDisp)}</span>
           <span class="asset-pct">${appData.hidden ? '' : aPct + '%'}</span>
+          ${hasDetail ? '<span style="color:var(--text-tertiary);font-size:16px;margin-left:2px">›</span>' : ''}
         </div>
       </div>`;
     }).join('');
@@ -953,6 +1029,85 @@ function handleImport(e) {
     e.target.value = '';
   };
   reader.readAsText(file);
+}
+
+// ── Detail View (Stock Drill-down) ────────────────────────────────────────────
+let detailChart = null;
+
+function openDetail(category) {
+  renderDetail(category);
+  document.getElementById('detail-view').classList.add('open');
+}
+
+function closeDetail() {
+  document.getElementById('detail-view').classList.remove('open');
+  if (detailChart) { detailChart.destroy(); detailChart = null; }
+}
+
+function renderDetail(category) {
+  const isTW = category === 'Taiwan Stock';
+  document.getElementById('detail-title').textContent = isTW ? '台股持倉' : '美股持倉';
+  document.getElementById('detail-cat-label').textContent = isTW ? '台股配置' : '美股配置';
+  document.getElementById('detail-center-label').textContent = isTW ? '台股' : '美股';
+
+  const stocks = (appData.stockDetails || {})[category] || [];
+  const totalTWD = stocks.reduce((s, st) => s + (st.amountTWD || 0), 0);
+  const totalDisp = appData.displayCurrency === 'USD' ? totalTWD * appData.exchangeRate : totalTWD;
+
+  document.getElementById('detail-total').textContent = fmt(totalDisp);
+  document.getElementById('detail-center-val').textContent = fmt(totalDisp);
+
+  const colors = stocks.map((_, i) => COLORS[i % COLORS.length]);
+  const values = stocks.map(s => {
+    const amt = s.amountTWD || 0;
+    return appData.displayCurrency === 'USD' ? amt * appData.exchangeRate : amt;
+  });
+
+  const ctx = document.getElementById('detail-donut-chart').getContext('2d');
+  if (detailChart) { detailChart.destroy(); detailChart = null; }
+
+  detailChart = new Chart(ctx, {
+    type: 'doughnut',
+    data: {
+      labels: stocks.map(s => s.name),
+      datasets: [{
+        data: values.some(v => v > 0) ? values : [1],
+        backgroundColor: values.some(v => v > 0) ? colors : ['#e5e5ea'],
+        borderWidth: 3, borderColor: '#fff', hoverBorderWidth: 3,
+      }]
+    },
+    options: {
+      cutout: '66%',
+      plugins: {
+        legend: { display: false },
+        tooltip: { enabled: !appData.hidden, callbacks: { label: c => ` ${c.label}: ${fmt(c.raw)}` } }
+      },
+      animation: { duration: 700, easing: 'easeInOutQuart' }
+    }
+  });
+
+  const list = document.getElementById('detail-stock-list');
+  if (!stocks.length) {
+    list.innerHTML = '<div class="empty-hint">請更新 Apps Script 並重新同步以查看個股資料</div>';
+    return;
+  }
+
+  list.innerHTML = stocks.map((s, i) => {
+    const amt = appData.displayCurrency === 'USD'
+      ? (s.amountTWD || 0) * appData.exchangeRate
+      : (s.amountTWD || 0);
+    const pct = totalDisp > 0 ? (amt / totalDisp * 100).toFixed(1) : '0.0';
+    return `<div class="detail-stock-row">
+      <div style="display:flex;align-items:center;gap:10px">
+        <div style="width:10px;height:10px;border-radius:5px;background:${colors[i]};flex-shrink:0"></div>
+        <span class="detail-stock-name">${s.name}</span>
+      </div>
+      <div class="detail-stock-right">
+        <span class="detail-stock-amount">${fmt(amt)}</span>
+        <span class="detail-stock-pct">${appData.hidden ? '' : pct + '%'}</span>
+      </div>
+    </div>`;
+  }).join('');
 }
 
 // ── Init ───────────────────────────────────────────────────────────────────────
