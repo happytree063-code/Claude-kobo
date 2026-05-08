@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>新增書單 · Kobo 99元</title>
+  <link rel="manifest" href="/static/manifest.json" />
+  <meta name="theme-color" content="#0a2f5e" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <link rel="apple-touch-icon" href="/static/icon-192.png" />
+  <link rel="stylesheet" href="/static/style.css" />
+  <style>
+    .admin-wrap { max-width: 600px; margin: 2rem auto; padding: 0 1.25rem 4rem; }
+    .admin-card { background: #fff; border-radius: 14px; box-shadow: var(--shadow); padding: 1.75rem; }
+    .admin-card h2 { font-size: 1.15rem; color: var(--kobo-blue); margin-bottom: 1.25rem; }
+    .form-group { margin-bottom: 1rem; }
+    label { display: block; font-size: .85rem; font-weight: 600; color: var(--text-muted); margin-bottom: .35rem; }
+    input, textarea {
+      width: 100%; padding: .6rem .85rem;
+      border: 1.5px solid #d0d8e4; border-radius: 8px;
+      font-size: .95rem; font-family: inherit;
+      transition: border-color .15s;
+    }
+    input:focus, textarea:focus { outline: none; border-color: var(--kobo-teal); }
+    textarea { resize: vertical; min-height: 80px; }
+    .btn-lookup {
+      padding: .5rem 1rem; background: var(--kobo-blue); color: #fff;
+      border: none; border-radius: 8px; font-size: .88rem; font-weight: 600;
+      cursor: pointer; margin-top: .3rem; transition: background .15s;
+    }
+    .btn-lookup:hover { background: #163d6e; }
+    .preview-box {
+      display: none; margin-top: 1rem;
+      border: 1.5px solid #e4ebf3; border-radius: 10px;
+      padding: 1rem; background: #f8fafc;
+      flex-direction: row; gap: 1rem; align-items: flex-start;
+    }
+    .preview-box.show { display: flex; }
+    .preview-cover { width: 70px; height: 95px; object-fit: cover; border-radius: 6px; flex-shrink: 0; }
+    .preview-cover-placeholder { width: 70px; height: 95px; background: #e8edf3; border-radius: 6px; display: flex; align-items: center; justify-content: center; font-size: 1.8rem; flex-shrink: 0; }
+    .preview-info { flex: 1; }
+    .preview-title { font-weight: 700; font-size: .95rem; color: var(--kobo-blue); margin-bottom: .2rem; }
+    .preview-author { font-size: .85rem; color: var(--text-muted); margin-bottom: .4rem; }
+    .preview-desc { font-size: .82rem; color: #555; line-height: 1.5; }
+    .btn-add {
+      width: 100%; padding: .75rem; margin-top: 1.25rem;
+      background: var(--kobo-teal); color: #fff;
+      border: none; border-radius: 10px;
+      font-size: 1rem; font-weight: 700; cursor: pointer;
+      transition: background .15s;
+    }
+    .btn-add:hover { background: #008f8a; }
+    .btn-add:disabled { opacity: .6; cursor: not-allowed; }
+    .divider { border: none; border-top: 1px solid #e4ebf3; margin: 1.75rem 0; }
+    .book-list-title { font-size: .85rem; font-weight: 700; color: var(--text-muted); margin-bottom: .75rem; text-transform: uppercase; letter-spacing: .5px; }
+    .admin-book-item {
+      display: flex; align-items: center; gap: .75rem;
+      padding: .65rem .75rem; border-radius: 8px;
+      border: 1px solid #e4ebf3; margin-bottom: .5rem;
+      background: #fafbfc;
+    }
+    .admin-book-item .item-title { flex: 1; font-size: .9rem; font-weight: 600; }
+    .admin-book-item .item-author { font-size: .8rem; color: var(--text-muted); }
+    .btn-del {
+      background: #fee2e2; color: #c0392b; border: none;
+      border-radius: 6px; padding: .3rem .65rem;
+      font-size: .8rem; font-weight: 600; cursor: pointer;
+    }
+    .btn-del:hover { background: #fecaca; }
+    .back-link { display: inline-block; margin-bottom: 1rem; color: var(--kobo-teal); font-size: .9rem; text-decoration: none; }
+    .back-link:hover { text-decoration: underline; }
+    .hint { font-size: .8rem; color: var(--text-muted); margin-top: .3rem; }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="header-inner">
+      <div class="logo-area">
+        <span class="logo-icon">📚</span>
+        <div>
+          <h1>Kobo 99元週特賣</h1>
+          <p class="tagline">手動新增書單</p>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <div class="admin-wrap">
+    <a href="/" class="back-link">← 回到書單首頁</a>
+
+    <div class="admin-card">
+      <h2>➕ 新增本週特賣書（{{ week_date }}）</h2>
+
+      <!-- Step 1: paste URL or title -->
+      <div class="form-group">
+        <label>Kobo 書籍網址（貼上後自動填入資訊）</label>
+        <input type="url" id="koboUrl" placeholder="https://www.kobo.com/zh/ebook/..." />
+        <p class="hint">或只填書名也可以，系統會從 Google Books 查詢</p>
+      </div>
+      <div class="form-group">
+        <label>書名</label>
+        <input type="text" id="titleInput" placeholder="例：你好，陌生人" />
+      </div>
+      <button class="btn-lookup" onclick="lookup()">🔍 查詢書籍資訊</button>
+
+      <!-- Preview -->
+      <div class="preview-box" id="previewBox">
+        <div id="previewCoverWrap"></div>
+        <div class="preview-info">
+          <div class="preview-title" id="previewTitle"></div>
+          <div class="preview-author" id="previewAuthor"></div>
+          <div class="preview-desc" id="previewDesc"></div>
+        </div>
+      </div>
+
+      <!-- Hidden fields filled by lookup -->
+      <input type="hidden" id="coverUrl" />
+      <input type="hidden" id="descInput" />
+      <input type="hidden" id="authorInput" />
+
+      <div class="form-group" style="margin-top:1rem">
+        <label>定價（選填）</label>
+        <input type="number" id="origPrice" placeholder="原價，例：350" />
+      </div>
+
+      <button class="btn-add" id="addBtn" onclick="addBook()" disabled>✅ 加入本週書單</button>
+    </div>
+
+    <!-- Current week books -->
+    {% if books %}
+    <hr class="divider" />
+    <p class="book-list-title">本週已新增（{{ books|length }} 本）</p>
+    {% for book in books %}
+    <div class="admin-book-item" id="item-{{ book.id }}">
+      <div>
+        <div class="item-title">{{ book.title }}</div>
+        {% if book.author %}<div class="item-author">{{ book.author }}</div>{% endif %}
+      </div>
+      <button class="btn-del" onclick="deleteBook({{ book.id }})">刪除</button>
+    </div>
+    {% endfor %}
+    {% endif %}
+  </div>
+
+  <div id="toast" class="toast hidden"></div>
+
+  <script>
+    let previewData = null;
+
+    async function lookup() {
+      const url = document.getElementById('koboUrl').value.trim();
+      const title = document.getElementById('titleInput').value.trim();
+      if (!url && !title) { showToast('請輸入網址或書名', 'error'); return; }
+
+      showToast('查詢中…', 'info');
+      try {
+        const res = await fetch('/api/lookup', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ kobo_url: url || null, title: title || null })
+        });
+        if (!res.ok) { showToast('找不到書籍，請直接填書名後新增', 'error'); return; }
+        previewData = await res.json();
+        renderPreview(previewData);
+        document.getElementById('addBtn').disabled = false;
+        showToast('找到了！確認資訊後點「加入書單」', 'success');
+      } catch(e) {
+        showToast('查詢失敗，請稍後再試', 'error');
+      }
+    }
+
+    function renderPreview(d) {
+      document.getElementById('previewTitle').textContent = d.title || '';
+      document.getElementById('previewAuthor').textContent = d.author ? '✍️ ' + d.author : '';
+      document.getElementById('previewDesc').textContent = (d.description || '').slice(0, 150);
+      const wrap = document.getElementById('previewCoverWrap');
+      if (d.cover_url) {
+        wrap.innerHTML = `<img class="preview-cover" src="${d.cover_url}" onerror="this.style.display='none'" />`;
+      } else {
+        wrap.innerHTML = `<div class="preview-cover-placeholder">📖</div>`;
+      }
+      // Fill hidden
+      document.getElementById('coverUrl').value = d.cover_url || '';
+      document.getElementById('descInput').value = d.description || '';
+      document.getElementById('authorInput').value = d.author || '';
+      if (d.title) document.getElementById('titleInput').value = d.title;
+      if (d.kobo_url) document.getElementById('koboUrl').value = d.kobo_url;
+      document.getElementById('previewBox').classList.add('show');
+    }
+
+    async function addBook() {
+      const title = document.getElementById('titleInput').value.trim();
+      if (!title) { showToast('請填入書名', 'error'); return; }
+      const btn = document.getElementById('addBtn');
+      btn.disabled = true;
+      btn.textContent = '新增中…';
+      try {
+        const res = await fetch('/api/add_book', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            title,
+            kobo_url: document.getElementById('koboUrl').value || null,
+            author: document.getElementById('authorInput').value || null,
+            cover_url: document.getElementById('coverUrl').value || null,
+            description: document.getElementById('descInput').value || null,
+            original_price: parseInt(document.getElementById('origPrice').value) || null,
+          })
+        });
+        const data = await res.json();
+        showToast(`✅ 已加入！找到 ${data.ratings_found} 個平台評分`, 'success');
+        setTimeout(() => location.reload(), 1200);
+      } catch(e) {
+        showToast('新增失敗', 'error');
+        btn.disabled = false;
+        btn.textContent = '✅ 加入本週書單';
+      }
+    }
+
+    async function deleteBook(id) {
+      if (!confirm('確定要刪除這本書嗎？')) return;
+      await fetch('/api/delete_book', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ book_id: id })
+      });
+      document.getElementById('item-' + id)?.remove();
+      showToast('已刪除', 'success');
+    }
+
+    function showToast(msg, type) {
+      const t = document.getElementById('toast');
+      t.textContent = msg;
+      t.className = `toast ${type}`;
+      clearTimeout(t._timer);
+      t._timer = setTimeout(() => { t.className = 'toast hidden'; }, 3500);
+    }
+
+    // Allow pressing Enter in URL field to trigger lookup
+    document.getElementById('koboUrl').addEventListener('keydown', e => { if (e.key === 'Enter') lookup(); });
+    document.getElementById('titleInput').addEventListener('keydown', e => { if (e.key === 'Enter') lookup(); });
+  </script>
+</body>
+</html>

@@ -174,9 +174,88 @@ def parse_books_from_article(soup: BeautifulSoup, article_url: str) -> list[dict
 def _extract_isbn_from_url(url: Optional[str]) -> Optional[str]:
     if not url:
         return None
-    # Kobo ebook URLs often end with a product ID that may be an ISBN
     m = re.search(r"/ebook/[^/]+-(\d{10,13})$", url)
     return m.group(1) if m else None
+
+
+def fetch_book_metadata_from_kobo(kobo_url: str) -> dict:
+    """
+    Given a Kobo ebook page URL, return title/author/cover/description.
+    Uses Open Graph meta tags which are usually accessible.
+    """
+    try:
+        resp = requests.get(kobo_url, headers=HEADERS, timeout=15)
+        resp.raise_for_status()
+        soup = BeautifulSoup(resp.text, "lxml")
+
+        def og(prop):
+            tag = soup.find("meta", property=f"og:{prop}") or soup.find("meta", attrs={"name": prop})
+            return tag["content"].strip() if tag and tag.get("content") else None
+
+        title = og("title") or soup.title and soup.title.get_text(strip=True)
+        # Strip " | Kobo" suffix
+        if title and " | " in title:
+            title = title.split(" | ")[0].strip()
+
+        description = og("description")
+        cover_url = og("image")
+
+        # Author from JSON-LD or meta
+        author = None
+        for script in soup.find_all("script", type="application/ld+json"):
+            try:
+                import json
+                data = json.loads(script.string or "")
+                if isinstance(data, dict) and data.get("author"):
+                    a = data["author"]
+                    if isinstance(a, list):
+                        author = a[0].get("name")
+                    elif isinstance(a, dict):
+                        author = a.get("name")
+                    if author:
+                        break
+            except Exception:
+                pass
+
+        isbn = _extract_isbn_from_url(kobo_url)
+        return {
+            "title": title,
+            "author": author,
+            "isbn": isbn,
+            "kobo_url": kobo_url,
+            "cover_url": cover_url,
+            "description": description,
+            "original_price": None,
+        }
+    except Exception as e:
+        logger.error("fetch_book_metadata_from_kobo failed for %s: %s", kobo_url, e)
+        return {}
+
+
+def fetch_book_metadata_from_google(title: str) -> dict:
+    """Fallback: look up book info from Google Books API by title."""
+    from urllib.parse import quote_plus
+    url = f"https://www.googleapis.com/books/v1/volumes?q={quote_plus(title)}&langRestrict=zh&maxResults=1"
+    try:
+        resp = requests.get(url, timeout=10)
+        resp.raise_for_status()
+        items = resp.json().get("items", [])
+        if not items:
+            return {}
+        info = items[0].get("volumeInfo", {})
+        authors = info.get("authors", [])
+        return {
+            "title": info.get("title", title),
+            "author": authors[0] if authors else None,
+            "isbn": None,
+            "kobo_url": None,
+            "cover_url": info.get("imageLinks", {}).get("thumbnail"),
+            "description": (info.get("description") or "")[:300] or None,
+            "original_price": None,
+        }
+    except Exception as e:
+        logger.error("fetch_book_metadata_from_google failed: %s", e)
+        return {}
 
 
 def scrape_weekly_deals() -> tuple[str, list[dict]]:

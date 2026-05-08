@@ -218,6 +218,7 @@ main {
 .btn-refresh:hover { background: #d4881c; }
 .btn-refresh:disabled { opacity: .7; cursor: not-allowed; }
 .btn-refresh.big { font-size: 1rem; padding: .7rem 1.5rem; margin-top: 1rem; }
+.actions { display: flex; gap: .6rem; flex-wrap: wrap; }
 .icon.spin { display: inline-block; animation: spin 1s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 
