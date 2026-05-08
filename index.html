@@ -1,0 +1,976 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>資產追蹤</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+    :root {
+      --bg: #f2f2f7;
+      --card: #ffffff;
+      --text-primary: #1c1c1e;
+      --text-secondary: #8e8e93;
+      --text-tertiary: #c7c7cc;
+      --accent-green: #8bb847;
+      --accent-gold: #c9a840;
+      --accent-red: #ff3b30;
+      --border: #e5e5ea;
+      --tab-height: 76px;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', sans-serif;
+      background: var(--bg);
+      color: var(--text-primary);
+      min-height: 100vh;
+      max-width: 430px;
+      margin: 0 auto;
+      position: relative;
+      overflow-x: hidden;
+    }
+
+    .content {
+      padding: 0 16px calc(var(--tab-height) + 16px);
+      padding-top: max(env(safe-area-inset-top, 0px), 16px);
+    }
+
+    .blobs {
+      position: fixed;
+      top: 0;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 100%;
+      max-width: 430px;
+      height: 200px;
+      pointer-events: none;
+      z-index: 0;
+      overflow: hidden;
+    }
+    .blob {
+      position: absolute;
+      border-radius: 50%;
+      filter: blur(2px);
+    }
+    .blob-1 { width: 140px; height: 140px; background: #8bb847; opacity: 0.55; top: -50px; left: -30px; }
+    .blob-2 { width: 110px; height: 110px; background: #c9a840; opacity: 0.45; top: 10px; left: 70px; }
+
+    .content { position: relative; z-index: 1; }
+
+    .header {
+      padding: 20px 0 12px;
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+    }
+    .header-label {
+      font-size: 13px;
+      color: var(--text-secondary);
+      font-weight: 500;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .header-label button {
+      background: none;
+      border: none;
+      cursor: pointer;
+      font-size: 16px;
+      padding: 0;
+      line-height: 1;
+    }
+    .total-amount {
+      font-size: 44px;
+      font-weight: 700;
+      letter-spacing: -1.5px;
+      margin-top: 4px;
+      line-height: 1.1;
+    }
+    .update-time {
+      font-size: 11px;
+      color: var(--text-tertiary);
+      margin-top: 4px;
+    }
+    .add-btn {
+      width: 46px;
+      height: 46px;
+      border-radius: 23px;
+      background: var(--accent-green);
+      border: none;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: white;
+      font-size: 26px;
+      font-weight: 300;
+      box-shadow: 0 4px 14px rgba(139,184,71,0.45);
+      transition: transform 0.1s;
+      flex-shrink: 0;
+      margin-top: 6px;
+    }
+    .add-btn:active { transform: scale(0.93); }
+
+    .currency-toggle {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 16px;
+    }
+    .currency-btn {
+      padding: 6px 16px;
+      border-radius: 20px;
+      border: 1.5px solid var(--border);
+      background: transparent;
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text-secondary);
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .currency-btn.active {
+      background: var(--text-primary);
+      border-color: var(--text-primary);
+      color: white;
+    }
+
+    .card {
+      background: var(--card);
+      border-radius: 18px;
+      padding: 16px;
+      margin-bottom: 12px;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+    }
+    .category-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 2px;
+    }
+    .category-name { font-size: 16px; font-weight: 700; }
+    .category-amount { font-size: 18px; font-weight: 700; }
+    .category-subtitle {
+      font-size: 12px;
+      color: var(--text-secondary);
+      margin-bottom: 10px;
+    }
+    .category-bar {
+      height: 3px;
+      border-radius: 2px;
+      background: var(--border);
+      margin-bottom: 12px;
+      overflow: hidden;
+    }
+    .category-bar-fill {
+      height: 100%;
+      border-radius: 2px;
+      transition: width 0.6s cubic-bezier(0.34,1.56,0.64,1);
+    }
+    .asset-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 10px 0;
+      border-top: 1px solid var(--border);
+      cursor: pointer;
+      transition: opacity 0.1s;
+    }
+    .asset-row:active { opacity: 0.6; }
+    .asset-name { font-size: 14px; font-weight: 500; }
+    .asset-right { display: flex; align-items: center; gap: 8px; }
+    .asset-amount { font-size: 14px; font-weight: 600; }
+    .asset-pct { font-size: 11px; color: var(--text-secondary); min-width: 38px; text-align: right; }
+    .dot-menu { display: flex; gap: 3px; padding: 6px 0 2px; }
+    .dot { width: 4px; height: 4px; border-radius: 50%; background: var(--text-tertiary); }
+
+    .view-title { padding: 20px 0 12px; font-size: 22px; font-weight: 700; }
+    .chart-container {
+      background: var(--card);
+      border-radius: 18px;
+      padding: 20px;
+      margin-bottom: 12px;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+    }
+    .chart-section-title { font-size: 15px; font-weight: 700; margin-bottom: 16px; }
+    .chart-wrap {
+      position: relative;
+      max-width: 220px;
+      margin: 0 auto 24px;
+    }
+    .chart-center {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      text-align: center;
+      pointer-events: none;
+    }
+    .chart-center-label { font-size: 11px; color: var(--text-secondary); }
+    .chart-center-value { font-size: 17px; font-weight: 700; }
+    .legend { display: flex; flex-direction: column; gap: 12px; }
+    .legend-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .legend-left { display: flex; align-items: center; gap: 10px; }
+    .legend-dot { width: 10px; height: 10px; border-radius: 5px; flex-shrink: 0; }
+    .legend-name { font-size: 13px; font-weight: 500; }
+    .legend-right { display: flex; align-items: center; gap: 10px; }
+    .legend-pct { font-size: 13px; font-weight: 700; }
+    .legend-val { font-size: 12px; color: var(--text-secondary); }
+
+    .settings-section { margin-bottom: 24px; }
+    .settings-section-title {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text-secondary);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      padding: 0 4px;
+      margin-bottom: 8px;
+    }
+    .settings-card {
+      background: var(--card);
+      border-radius: 18px;
+      overflow: hidden;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+    }
+    .settings-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 14px 16px;
+      border-bottom: 1px solid var(--border);
+      cursor: pointer;
+      transition: background 0.1s;
+    }
+    .settings-row:last-child { border-bottom: none; }
+    .settings-row:active { background: var(--bg); }
+    .settings-row-label { font-size: 15px; font-weight: 500; }
+    .settings-row-value { font-size: 14px; color: var(--text-secondary); }
+    .settings-row-arrow { color: var(--text-tertiary); font-size: 16px; margin-left: 6px; }
+
+    .tab-bar {
+      position: fixed;
+      bottom: 0;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 100%;
+      max-width: 430px;
+      background: rgba(255,255,255,0.88);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border-top: 1px solid rgba(0,0,0,0.08);
+      padding: 8px 0 calc(8px + env(safe-area-inset-bottom, 0px));
+      display: flex;
+      justify-content: space-around;
+      z-index: 100;
+    }
+    .tab-item {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 3px;
+      background: none;
+      border: none;
+      cursor: pointer;
+      padding: 4px 28px;
+      color: var(--text-tertiary);
+      transition: color 0.15s;
+    }
+    .tab-item.active { color: var(--text-primary); }
+    .tab-icon { font-size: 22px; line-height: 1; }
+    .tab-label { font-size: 10px; font-weight: 600; }
+
+    .view { display: none; }
+    .view.active { display: block; }
+
+    .modal-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.38);
+      z-index: 200;
+      display: flex;
+      align-items: flex-end;
+      justify-content: center;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.25s;
+    }
+    .modal-overlay.open { opacity: 1; pointer-events: all; }
+    .modal {
+      width: 100%;
+      max-width: 430px;
+      background: var(--card);
+      border-radius: 24px 24px 0 0;
+      padding: 20px 20px calc(20px + env(safe-area-inset-bottom, 0px));
+      transform: translateY(100%);
+      transition: transform 0.32s cubic-bezier(0.32,0.72,0,1);
+    }
+    .modal-overlay.open .modal { transform: translateY(0); }
+    .modal-handle {
+      width: 36px;
+      height: 4px;
+      background: var(--border);
+      border-radius: 2px;
+      margin: 0 auto 20px;
+    }
+    .modal-title { font-size: 18px; font-weight: 700; margin-bottom: 20px; }
+    .form-group { margin-bottom: 14px; }
+    .form-label {
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--text-secondary);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 7px;
+    }
+    .form-input {
+      width: 100%;
+      padding: 13px 14px;
+      border: 1.5px solid var(--border);
+      border-radius: 12px;
+      font-size: 16px;
+      font-family: inherit;
+      background: var(--bg);
+      color: var(--text-primary);
+      outline: none;
+      transition: border-color 0.15s;
+    }
+    .form-input:focus { border-color: var(--accent-green); }
+    .form-input.error { border-color: var(--accent-red); }
+
+    .chip-row { display: flex; flex-wrap: wrap; gap: 7px; }
+    .chip {
+      padding: 6px 14px;
+      border-radius: 20px;
+      border: 1.5px solid var(--border);
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      background: transparent;
+      color: var(--text-secondary);
+      font-family: inherit;
+      transition: all 0.15s;
+    }
+    .chip.selected {
+      background: var(--text-primary);
+      border-color: var(--text-primary);
+      color: white;
+    }
+
+    .btn-row { display: flex; gap: 10px; margin-top: 20px; }
+    .btn {
+      flex: 1;
+      padding: 14px;
+      border-radius: 14px;
+      border: none;
+      font-size: 16px;
+      font-weight: 600;
+      cursor: pointer;
+      font-family: inherit;
+      transition: opacity 0.1s;
+    }
+    .btn:active { opacity: 0.75; }
+    .btn-primary { background: var(--accent-green); color: white; }
+    .btn-secondary { background: var(--bg); color: var(--text-primary); }
+    .btn-danger { background: #fff0f0; color: var(--accent-red); }
+
+    .add-category-btn {
+      width: 100%;
+      margin-top: 10px;
+      padding: 14px;
+      border-radius: 14px;
+      border: 1.5px dashed var(--border);
+      background: transparent;
+      font-size: 15px;
+      font-weight: 600;
+      color: var(--accent-green);
+      cursor: pointer;
+      font-family: inherit;
+    }
+
+    @keyframes fadeUp {
+      from { opacity: 0; transform: translateY(8px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+    .fade-up { animation: fadeUp 0.35s ease; }
+
+    .empty-hint {
+      text-align: center;
+      padding: 28px 0 12px;
+      color: var(--text-secondary);
+      font-size: 14px;
+    }
+  </style>
+</head>
+<body>
+
+<div class="blobs">
+  <div class="blob blob-1"></div>
+  <div class="blob blob-2"></div>
+</div>
+
+<div id="view-home" class="view active content">
+  <div class="header">
+    <div>
+      <div class="header-label">
+        我的淨資產
+        <span id="display-currency-label" style="color:var(--text-tertiary)">TWD</span>
+        <button id="hide-btn" onclick="toggleHide()">👁</button>
+      </div>
+      <div class="total-amount fade-up" id="total-display">0</div>
+      <div class="update-time" id="last-updated"></div>
+    </div>
+    <button class="add-btn" onclick="openAddModal()">+</button>
+  </div>
+
+  <div class="currency-toggle">
+    <button class="currency-btn active" id="btn-twd" onclick="setCurrency('TWD')">TWD</button>
+    <button class="currency-btn" id="btn-usd" onclick="setCurrency('USD')">USD</button>
+  </div>
+
+  <div id="categories-container"></div>
+</div>
+
+<div id="view-chart" class="view content">
+  <div class="view-title">資產分析</div>
+  <div class="chart-container">
+    <div class="chart-section-title">資產配置</div>
+    <div class="chart-wrap">
+      <canvas id="donut-chart"></canvas>
+      <div class="chart-center">
+        <div class="chart-center-label">總資產</div>
+        <div class="chart-center-value" id="chart-center-val">-</div>
+      </div>
+    </div>
+    <div class="legend" id="chart-legend"></div>
+  </div>
+  <div class="chart-container">
+    <div class="chart-section-title">類別佔比</div>
+    <div id="category-bars"></div>
+  </div>
+</div>
+
+<div id="view-settings" class="view content">
+  <div class="view-title">設定</div>
+  <div class="settings-section">
+    <div class="settings-section-title">匯率</div>
+    <div class="settings-card">
+      <div class="settings-row" onclick="openExchangeModal()">
+        <span class="settings-row-label">TWD → USD</span>
+        <div style="display:flex;align-items:center">
+          <span class="settings-row-value" id="rate-display"></span>
+          <span class="settings-row-arrow">›</span>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="settings-section">
+    <div class="settings-section-title">資產管理</div>
+    <div id="manage-assets-list" class="settings-card"></div>
+    <button class="add-category-btn" onclick="openAddModal()">+ 新增資產</button>
+  </div>
+  <div class="settings-section">
+    <div class="settings-section-title">資料</div>
+    <div class="settings-card">
+      <div class="settings-row" onclick="exportData()">
+        <span class="settings-row-label">匯出備份 (JSON)</span>
+        <span class="settings-row-arrow">›</span>
+      </div>
+      <div class="settings-row" onclick="importData()">
+        <span class="settings-row-label">匯入備份</span>
+        <span class="settings-row-arrow">›</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="tab-bar">
+  <button class="tab-item active" id="tab-home" onclick="switchTab('home')">
+    <span class="tab-icon">▦</span>
+    <span class="tab-label">總覽</span>
+  </button>
+  <button class="tab-item" id="tab-chart" onclick="switchTab('chart')">
+    <span class="tab-icon">◕</span>
+    <span class="tab-label">分析</span>
+  </button>
+  <button class="tab-item" id="tab-settings" onclick="switchTab('settings')">
+    <span class="tab-icon">···</span>
+    <span class="tab-label">設定</span>
+  </button>
+</div>
+
+<div class="modal-overlay" id="add-modal" onclick="closeModalOnBg(event,'add-modal')">
+  <div class="modal">
+    <div class="modal-handle"></div>
+    <div class="modal-title" id="modal-title">新增資產</div>
+    <div class="form-group">
+      <div class="form-label">資產名稱</div>
+      <input class="form-input" id="asset-name" type="text" placeholder="e.g. 富邦台幣" />
+    </div>
+    <div class="form-group">
+      <div class="form-label">金額</div>
+      <input class="form-input" id="asset-amount" type="number" inputmode="decimal" placeholder="0" />
+    </div>
+    <div class="form-group">
+      <div class="form-label">幣別</div>
+      <div class="chip-row" id="currency-chips">
+        <button class="chip selected" onclick="selectAssetCurrency('TWD')">TWD</button>
+        <button class="chip" onclick="selectAssetCurrency('USD')">USD</button>
+      </div>
+    </div>
+    <div class="form-group">
+      <div class="form-label">類別</div>
+      <div class="chip-row" id="category-chips"></div>
+    </div>
+    <div class="btn-row">
+      <button class="btn btn-secondary" onclick="closeModal('add-modal')">取消</button>
+      <button class="btn btn-primary" onclick="saveAsset()">儲存</button>
+    </div>
+    <div class="btn-row" id="delete-btn-row" style="display:none; margin-top:4px;">
+      <button class="btn btn-danger" onclick="deleteAsset()">刪除此資產</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="exchange-modal" onclick="closeModalOnBg(event,'exchange-modal')">
+  <div class="modal">
+    <div class="modal-handle"></div>
+    <div class="modal-title">匯率設定</div>
+    <div class="form-group">
+      <div class="form-label">1 TWD = ? USD</div>
+      <input class="form-input" id="exchange-rate-input" type="number" inputmode="decimal" step="0.0001" placeholder="0.0308" />
+    </div>
+    <p style="font-size:12px;color:var(--text-secondary);margin-top:-6px;margin-bottom:4px">
+      目前市場匯率約 0.0308（2025年參考值）
+    </p>
+    <div class="btn-row">
+      <button class="btn btn-secondary" onclick="closeModal('exchange-modal')">取消</button>
+      <button class="btn btn-primary" onclick="saveExchangeRate()">儲存</button>
+    </div>
+  </div>
+</div>
+
+<input type="file" id="import-file-input" accept=".json" style="display:none" onchange="handleImport(event)" />
+
+<script>
+const COLORS = [
+  '#8bb847','#c9a840','#5b8dd9','#e07b54','#9b6ec8',
+  '#4cb8a0','#e05c8a','#6b9e6b','#d4704a','#7b9ed4'
+];
+
+let appData;
+let editingAssetId = null;
+let selectedAssetCurrency = 'TWD';
+let selectedCategoryId = null;
+let donutChart = null;
+
+function uid() { return Math.random().toString(36).slice(2, 9); }
+
+function makeDefault() {
+  return {
+    displayCurrency: 'TWD',
+    hidden: false,
+    exchangeRate: 0.0308,
+    lastUpdated: null,
+    categories: [
+      {
+        id: uid(),
+        name: '流動資金',
+        assets: [
+          { id: uid(), name: '富邦台幣',  amount: 0, currency: 'TWD' },
+          { id: uid(), name: '元大證券',  amount: 0, currency: 'TWD' },
+          { id: uid(), name: 'Firstrade', amount: 0, currency: 'USD' }
+        ]
+      },
+      {
+        id: uid(),
+        name: '投資',
+        assets: [
+          { id: uid(), name: '富邦儲蓄險', amount: 0, currency: 'TWD' },
+          { id: uid(), name: 'Ethereum',   amount: 0, currency: 'USD' },
+          { id: uid(), name: 'Bitcoin',    amount: 0, currency: 'USD' }
+        ]
+      }
+    ]
+  };
+}
+
+function loadData() {
+  try {
+    const saved = localStorage.getItem('assetData_v2');
+    if (saved) {
+      appData = JSON.parse(saved);
+      appData.categories.forEach(cat => {
+        if (!cat.id) cat.id = uid();
+        cat.assets.forEach(a => { if (!a.id) a.id = uid(); });
+      });
+    } else {
+      appData = makeDefault();
+    }
+  } catch(e) {
+    appData = makeDefault();
+  }
+}
+
+function saveData() {
+  appData.lastUpdated = new Date().toISOString();
+  localStorage.setItem('assetData_v2', JSON.stringify(appData));
+}
+
+function toTWD(amount, currency) {
+  return currency === 'USD' ? amount / appData.exchangeRate : amount;
+}
+function toDisplay(amount, currency) {
+  const twd = toTWD(amount, currency);
+  return appData.displayCurrency === 'USD' ? twd * appData.exchangeRate : twd;
+}
+function sym() { return appData.displayCurrency === 'TWD' ? 'NT$' : 'US$'; }
+function fmt(n) {
+  if (appData.hidden) return '••••••';
+  if (Math.abs(n) >= 1e6) return sym() + (n / 1e6).toFixed(2) + 'M';
+  if (Math.abs(n) >= 1e4) return sym() + Math.round(n).toLocaleString();
+  return sym() + n.toLocaleString(undefined, { maximumFractionDigits: 0 });
+}
+function fmtNative(amount, currency) {
+  const s = currency === 'TWD' ? 'NT$' : 'US$';
+  return s + amount.toLocaleString(undefined, { maximumFractionDigits: currency === 'USD' ? 2 : 0 });
+}
+
+function getTotal() {
+  return appData.categories.reduce((s, cat) =>
+    s + cat.assets.reduce((ss, a) => ss + toDisplay(a.amount, a.currency), 0), 0);
+}
+function getCatTotal(cat) {
+  return cat.assets.reduce((s, a) => s + toDisplay(a.amount, a.currency), 0);
+}
+
+function renderHome() {
+  const total = getTotal();
+  document.getElementById('total-display').textContent = fmt(total);
+  document.getElementById('display-currency-label').textContent = appData.displayCurrency;
+  document.getElementById('hide-btn').textContent = appData.hidden ? '🙈' : '👁';
+  document.getElementById('btn-twd').className = 'currency-btn' + (appData.displayCurrency === 'TWD' ? ' active' : '');
+  document.getElementById('btn-usd').className = 'currency-btn' + (appData.displayCurrency === 'USD' ? ' active' : '');
+
+  if (appData.lastUpdated) {
+    const d = new Date(appData.lastUpdated);
+    document.getElementById('last-updated').textContent =
+      `${d.getMonth()+1}月${d.getDate()}日 更新`;
+  }
+
+  const container = document.getElementById('categories-container');
+  container.innerHTML = '';
+
+  if (!appData.categories.length) {
+    container.innerHTML = '<div class="empty-hint">點右上角 + 新增你的第一個資產</div>';
+    return;
+  }
+
+  appData.categories.forEach((cat, ci) => {
+    const catTotal = getCatTotal(cat);
+    const pct = total > 0 ? catTotal / total * 100 : 0;
+    const color = COLORS[ci % COLORS.length];
+    const names = cat.assets.slice(0, 4).map(a => a.name).join('、');
+
+    const rows = cat.assets.map(a => {
+      const aDisp = toDisplay(a.amount, a.currency);
+      const aPct = total > 0 ? (aDisp / total * 100).toFixed(1) : '0.0';
+      return `<div class="asset-row" onclick="openEditModal('${a.id}')">
+        <span class="asset-name">${a.name}</span>
+        <div class="asset-right">
+          <span class="asset-amount">${fmt(aDisp)}</span>
+          <span class="asset-pct">${appData.hidden ? '' : aPct + '%'}</span>
+        </div>
+      </div>`;
+    }).join('');
+
+    const card = document.createElement('div');
+    card.className = 'card';
+    card.innerHTML = `
+      <div class="category-header">
+        <span class="category-name">${cat.name}</span>
+        <span class="category-amount" style="color:${color}">${fmt(catTotal)}</span>
+      </div>
+      <div class="category-subtitle">${names || '尚無資產'}</div>
+      <div class="category-bar">
+        <div class="category-bar-fill" style="width:${pct.toFixed(1)}%;background:${color}"></div>
+      </div>
+      ${rows}
+      <div class="dot-menu"><div class="dot"></div><div class="dot"></div><div class="dot"></div></div>`;
+    container.appendChild(card);
+  });
+}
+
+function renderChart() {
+  const total = getTotal();
+  document.getElementById('chart-center-val').textContent =
+    appData.hidden ? '••••' : fmt(total);
+
+  const assets = [];
+  appData.categories.forEach(cat =>
+    cat.assets.forEach(a =>
+      assets.push({ name: a.name, value: toDisplay(a.amount, a.currency) })
+    )
+  );
+
+  const labels = assets.map(a => a.name);
+  const values = assets.map(a => a.value);
+  const colors = assets.map((_, i) => COLORS[i % COLORS.length]);
+
+  const ctx = document.getElementById('donut-chart').getContext('2d');
+  if (donutChart) donutChart.destroy();
+  donutChart = new Chart(ctx, {
+    type: 'doughnut',
+    data: {
+      labels,
+      datasets: [{
+        data: values.length && values.some(v => v > 0) ? values : [1],
+        backgroundColor: values.length && values.some(v => v > 0) ? colors : ['#e5e5ea'],
+        borderWidth: 3,
+        borderColor: '#fff',
+        hoverBorderWidth: 3,
+      }]
+    },
+    options: {
+      cutout: '66%',
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          enabled: !appData.hidden,
+          callbacks: {
+            label: ctx => ` ${ctx.label}: ${fmt(ctx.raw)}`
+          }
+        }
+      },
+      animation: { duration: 700, easing: 'easeInOutQuart' }
+    }
+  });
+
+  document.getElementById('chart-legend').innerHTML = assets.map((a, i) => {
+    const pct = total > 0 ? (a.value / total * 100).toFixed(1) : '0.0';
+    return `<div class="legend-item">
+      <div class="legend-left">
+        <div class="legend-dot" style="background:${colors[i]}"></div>
+        <span class="legend-name">${a.name}</span>
+      </div>
+      <div class="legend-right">
+        <span class="legend-val">${appData.hidden ? '••••' : fmt(a.value)}</span>
+        <span class="legend-pct">${appData.hidden ? '••' : pct + '%'}</span>
+      </div>
+    </div>`;
+  }).join('');
+
+  document.getElementById('category-bars').innerHTML =
+    appData.categories.map((cat, ci) => {
+      const ct = getCatTotal(cat);
+      const pct = total > 0 ? ct / total * 100 : 0;
+      const color = COLORS[ci % COLORS.length];
+      return `<div style="margin-bottom:16px">
+        <div style="display:flex;justify-content:space-between;margin-bottom:7px">
+          <span style="font-size:14px;font-weight:700">${cat.name}</span>
+          <span style="font-size:14px;font-weight:700;color:${color}">
+            ${appData.hidden ? '••' : pct.toFixed(1) + '%'}
+          </span>
+        </div>
+        <div style="height:8px;border-radius:4px;background:var(--border);overflow:hidden">
+          <div style="height:100%;border-radius:4px;background:${color};width:${pct.toFixed(1)}%;transition:width 0.6s cubic-bezier(0.34,1.56,0.64,1)"></div>
+        </div>
+        <div style="font-size:12px;color:var(--text-secondary);margin-top:4px">
+          ${appData.hidden ? '••••' : fmt(ct)}
+        </div>
+      </div>`;
+    }).join('');
+}
+
+function renderSettings() {
+  document.getElementById('rate-display').textContent = `1 TWD = ${appData.exchangeRate} USD`;
+
+  const all = [];
+  appData.categories.forEach(cat =>
+    cat.assets.forEach(a => all.push({ ...a, catName: cat.name }))
+  );
+
+  const list = document.getElementById('manage-assets-list');
+  if (!all.length) {
+    list.innerHTML = '<div class="settings-row" style="cursor:default"><span style="color:var(--text-secondary);font-size:14px">尚無資產，請點下方按鈕新增</span></div>';
+    return;
+  }
+  list.innerHTML = all.map(a => `
+    <div class="settings-row" onclick="openEditModal('${a.id}')">
+      <div>
+        <div class="settings-row-label">${a.name}</div>
+        <div style="font-size:12px;color:var(--text-secondary)">${a.catName}</div>
+      </div>
+      <div style="display:flex;align-items:center">
+        <span class="settings-row-value">${fmtNative(a.amount, a.currency)}</span>
+        <span class="settings-row-arrow">›</span>
+      </div>
+    </div>`).join('');
+}
+
+function render() {
+  renderHome();
+  renderSettings();
+  const chartView = document.getElementById('view-chart');
+  if (chartView.classList.contains('active')) renderChart();
+}
+
+function openModal(id) { document.getElementById(id).classList.add('open'); }
+function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+function closeModalOnBg(e, id) { if (e.target.id === id) closeModal(id); }
+
+function openAddModal() {
+  editingAssetId = null;
+  document.getElementById('modal-title').textContent = '新增資產';
+  document.getElementById('asset-name').value = '';
+  document.getElementById('asset-amount').value = '';
+  document.getElementById('asset-name').classList.remove('error');
+  document.getElementById('delete-btn-row').style.display = 'none';
+  selectedAssetCurrency = 'TWD';
+  selectedCategoryId = appData.categories[0]?.id ?? null;
+  refreshModalChips();
+  openModal('add-modal');
+  setTimeout(() => document.getElementById('asset-name').focus(), 350);
+}
+
+function openEditModal(assetId) {
+  editingAssetId = assetId;
+  let asset = null, catId = null;
+  appData.categories.forEach(cat => {
+    const found = cat.assets.find(a => a.id === assetId);
+    if (found) { asset = found; catId = cat.id; }
+  });
+  if (!asset) return;
+
+  document.getElementById('modal-title').textContent = '編輯資產';
+  document.getElementById('asset-name').value = asset.name;
+  document.getElementById('asset-amount').value = asset.amount;
+  document.getElementById('asset-name').classList.remove('error');
+  document.getElementById('delete-btn-row').style.display = 'flex';
+  selectedAssetCurrency = asset.currency;
+  selectedCategoryId = catId;
+  refreshModalChips();
+  openModal('add-modal');
+}
+
+function selectAssetCurrency(cur) {
+  selectedAssetCurrency = cur;
+  refreshModalChips();
+}
+function selectCategory(catId) {
+  selectedCategoryId = catId;
+  refreshModalChips();
+}
+
+function refreshModalChips() {
+  document.querySelectorAll('#currency-chips .chip').forEach(c => {
+    c.className = 'chip' + (c.textContent.trim() === selectedAssetCurrency ? ' selected' : '');
+  });
+  document.getElementById('category-chips').innerHTML =
+    appData.categories.map(cat =>
+      `<button class="chip ${cat.id === selectedCategoryId ? 'selected' : ''}"
+               onclick="selectCategory('${cat.id}')">${cat.name}</button>`
+    ).join('');
+}
+
+function saveAsset() {
+  const name = document.getElementById('asset-name').value.trim();
+  const amount = parseFloat(document.getElementById('asset-amount').value) || 0;
+  if (!name) {
+    document.getElementById('asset-name').classList.add('error');
+    document.getElementById('asset-name').focus();
+    return;
+  }
+  document.getElementById('asset-name').classList.remove('error');
+
+  if (editingAssetId) {
+    appData.categories.forEach(cat => {
+      const idx = cat.assets.findIndex(a => a.id === editingAssetId);
+      if (idx >= 0) {
+        const [asset] = cat.assets.splice(idx, 1);
+        asset.name = name;
+        asset.amount = amount;
+        asset.currency = selectedAssetCurrency;
+        const target = appData.categories.find(c => c.id === selectedCategoryId) || cat;
+        target.assets.push(asset);
+      }
+    });
+  } else {
+    const target = appData.categories.find(c => c.id === selectedCategoryId)
+                   || appData.categories[0];
+    if (target) {
+      target.assets.push({ id: uid(), name, amount, currency: selectedAssetCurrency });
+    }
+  }
+
+  saveData();
+  render();
+  closeModal('add-modal');
+}
+
+function deleteAsset() {
+  if (!editingAssetId) return;
+  appData.categories.forEach(cat => {
+    cat.assets = cat.assets.filter(a => a.id !== editingAssetId);
+  });
+  saveData();
+  render();
+  closeModal('add-modal');
+}
+
+function openExchangeModal() {
+  document.getElementById('exchange-rate-input').value = appData.exchangeRate;
+  openModal('exchange-modal');
+}
+function saveExchangeRate() {
+  const r = parseFloat(document.getElementById('exchange-rate-input').value);
+  if (r > 0) { appData.exchangeRate = r; saveData(); render(); }
+  closeModal('exchange-modal');
+}
+
+function setCurrency(cur) { appData.displayCurrency = cur; saveData(); render(); }
+function toggleHide() { appData.hidden = !appData.hidden; render(); }
+
+function switchTab(name) {
+  document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+  document.querySelectorAll('.tab-item').forEach(t => t.classList.remove('active'));
+  document.getElementById('view-' + name).classList.add('active');
+  document.getElementById('tab-' + name).classList.add('active');
+  if (name === 'chart') renderChart();
+}
+
+function exportData() {
+  const blob = new Blob([JSON.stringify(appData, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'assets-' + new Date().toISOString().slice(0,10) + '.json';
+  a.click();
+  URL.revokeObjectURL(url);
+}
+function importData() { document.getElementById('import-file-input').click(); }
+function handleImport(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = ev => {
+    try {
+      appData = JSON.parse(ev.target.result);
+      saveData();
+      render();
+      alert('匯入成功！');
+    } catch { alert('匯入失敗：格式錯誤'); }
+    e.target.value = '';
+  };
+  reader.readAsText(file);
+}
+
+loadData();
+render();
+</script>
+</body>
+</html>
