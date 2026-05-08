@@ -4,7 +4,8 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>資產追蹤</title>
-  <link rel="apple-touch-icon" href="apple-touch-icon.png">
+  <link rel="apple-touch-icon" sizes="180x180" href="IMG_3516.png">
+  <link rel="icon" type="image/png" href="IMG_3516.png">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-title" content="資產追蹤">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -728,15 +729,12 @@ async function syncFromSheet() {
 function applySheetData(data) {
   if (!data || !Array.isArray(data.assets)) return;
 
-  // Update exchange rate if sheet provides TWD/USD ratio (e.g. 31.35)
   if (data.exchangeRate && typeof data.exchangeRate === 'number' && data.exchangeRate > 1) {
     appData.exchangeRate = 1 / data.exchangeRate;
   }
 
-  // Save stock details for drill-down view
   appData.stockDetails = data.stockDetails || {};
 
-  // Save FIRE plan data
   if (data.firePlan) appData.firePlan = data.firePlan;
 
   const investAssets = [];
@@ -751,7 +749,6 @@ function applySheetData(data) {
     }
   });
 
-  // Preserve existing category IDs if possible
   const findCat = name => appData.categories.find(c => c.name === name);
   const invest  = findCat('投資資金') || findCat('流動資金') || { id: uid(), name: '投資資金' };
   const reserve = findCat('儲備金')   || findCat('投資')    || { id: uid(), name: '儲備金' };
@@ -799,7 +796,6 @@ function renderHome() {
   document.getElementById('btn-twd').className = 'currency-btn' + (appData.displayCurrency === 'TWD' ? ' active' : '');
   document.getElementById('btn-usd').className = 'currency-btn' + (appData.displayCurrency === 'USD' ? ' active' : '');
 
-  // Sync time label
   const syncLabel = document.getElementById('sync-time-label');
   if (appData.lastSynced) {
     const d = new Date(appData.lastSynced);
@@ -927,11 +923,9 @@ function renderChart() {
 function renderSettings() {
   document.getElementById('rate-display').textContent = `1 TWD = ${appData.exchangeRate} USD`;
 
-  // Script URL status
   const hasUrl = !!appData.scriptUrl;
   document.getElementById('script-url-label').textContent = hasUrl ? '已設定 ✓' : '未設定';
 
-  // Sync info card
   const info = document.getElementById('sync-info-text');
   if (hasUrl && appData.lastSynced) {
     const d = new Date(appData.lastSynced);
@@ -942,7 +936,6 @@ function renderSettings() {
     info.innerHTML = `尚未設定 Apps Script 網址`;
   }
 
-  // Assets list
   const all = [];
   appData.categories.forEach(cat => cat.assets.forEach(a => all.push({ ...a, catName: cat.name })));
   const list = document.getElementById('manage-assets-list');
@@ -1124,13 +1117,11 @@ function renderFire() {
   const params = getFireParams();
   const fireNum = Math.round(params.annualExpenses / params.safeWithdrawalRate);
 
-  // Recalculate FIRE milestone: first year projected assets >= fireNum
   let fireYear = null, fireAge = null;
   for (const t of plan.table) {
     if (t.assets >= fireNum) { fireYear = t.year; fireAge = t.age; break; }
   }
 
-  // Investment total from app data (TWD)
   const investCat = appData.categories.find(c => c.name === '投資資金');
   const investTWD = investCat
     ? investCat.assets.reduce((s, a) => s + toTWD(a.amount, a.currency), 0)
@@ -1177,7 +1168,7 @@ function renderFire() {
         </div>
         ${cur ? `<div>
           <div style="font-size:11px;color:var(--text-secondary);margin-bottom:4px">今年預期月現金流</div>
-          <div style="font-size:15px;font-weight:700;color:${cur.monthlyCF >= 0 ? 'var(--accent-green)' : 'var(--accent-red)'}">${cur.monthlyCF >= 0 ? '+' : ''}NT$${Math.abs(cur.monthlyCF).toLocaleString()}</div>
+          <div style="font-size:15px;font-weight:700;color:${cur.monthlyCF >= 0 ? 'var(--accent-green)' : 'var(--accent-red)'">${cur.monthlyCF >= 0 ? '+' : ''}NT$${Math.abs(cur.monthlyCF).toLocaleString()}</div>
         </div>
         <div>
           <div style="font-size:11px;color:var(--text-secondary);margin-bottom:4px">今年安全提領額</div>
@@ -1220,7 +1211,6 @@ function renderFire() {
       </div>` : ''}
     </div>`;
 
-  // Draw the line chart
   const table = plan.table.slice(0, 25);
   const ctx = document.getElementById('fire-chart');
   if (!ctx) return;
@@ -1377,7 +1367,6 @@ function renderDetail(category) {
 loadData();
 render();
 
-// Auto-sync on load if URL is configured
 if (appData.scriptUrl) {
   syncFromSheet();
 }
