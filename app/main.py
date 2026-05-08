@@ -15,6 +15,7 @@ from .database import init_db, get_this_week_books, get_all_weeks, get_books_by_
 from .scheduler import create_scheduler, refresh_weekly_deals
 from .scraper import get_this_thursday, fetch_book_metadata_from_kobo, fetch_book_metadata_from_google
 from .ratings import fetch_all_ratings
+from .notify import get_topic, send_weekly_notification
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 logger = logging.getLogger(__name__)
@@ -89,6 +90,32 @@ async def admin(request: Request):
         "week_date": week_date,
         "books": books,
     })
+
+
+@app.get("/settings", response_class=HTMLResponse)
+async def settings_page(request: Request):
+    return templates.TemplateResponse("settings.html", {
+        "request": request,
+        "ntfy_topic": get_topic() or "",
+    })
+
+
+@app.post("/api/test_notify")
+async def api_test_notify():
+    topic = get_topic()
+    if not topic:
+        raise HTTPException(status_code=400, detail="尚未設定 NTFY_TOPIC")
+    import requests as req
+    try:
+        req.post(
+            f"https://ntfy.sh/{topic}",
+            data="這是測試通知，代表設定成功！📚".encode("utf-8"),
+            headers={"Title": "Kobo 99元 · 測試通知", "Tags": "white_check_mark"},
+            timeout=8,
+        )
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=str(e))
+    return {"ok": True}
 
 
 # ── API ──────────────────────────────────────────────────────────────────────

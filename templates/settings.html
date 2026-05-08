@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>通知設定 · Kobo 99元</title>
+  <link rel="manifest" href="/static/manifest.json" />
+  <meta name="theme-color" content="#0a2f5e" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <link rel="apple-touch-icon" href="/static/icon-192.png" />
+  <link rel="stylesheet" href="/static/style.css" />
+  <style>
+    .settings-wrap { max-width: 560px; margin: 2rem auto; padding: 0 1.25rem 4rem; }
+    .settings-card { background: #fff; border-radius: 14px; box-shadow: var(--shadow); padding: 1.75rem; margin-bottom: 1.25rem; }
+    .settings-card h2 { font-size: 1.1rem; color: var(--kobo-blue); margin-bottom: .3rem; }
+    .card-desc { font-size: .85rem; color: var(--text-muted); margin-bottom: 1.25rem; line-height: 1.55; }
+    .step { display: flex; gap: .85rem; align-items: flex-start; margin-bottom: 1rem; }
+    .step-num { width: 28px; height: 28px; border-radius: 50%; background: var(--kobo-blue); color: #fff; display: flex; align-items: center; justify-content: center; font-size: .8rem; font-weight: 700; flex-shrink: 0; margin-top: .1rem; }
+    .step-body { flex: 1; font-size: .88rem; line-height: 1.55; }
+    .step-body strong { color: var(--kobo-blue); }
+    .app-badges { display: flex; gap: .6rem; margin-top: .6rem; flex-wrap: wrap; }
+    .badge { padding: .35rem .85rem; border-radius: 20px; font-size: .8rem; font-weight: 600; text-decoration: none; }
+    .badge-ios { background: #000; color: #fff; }
+    .badge-android { background: #3ddc84; color: #000; }
+    label { display: block; font-size: .85rem; font-weight: 600; color: var(--text-muted); margin-bottom: .35rem; }
+    .input-row { display: flex; gap: .5rem; }
+    input[type=text] {
+      flex: 1; padding: .6rem .85rem;
+      border: 1.5px solid #d0d8e4; border-radius: 8px;
+      font-size: .95rem; font-family: inherit;
+    }
+    input[type=text]:focus { outline: none; border-color: var(--kobo-teal); }
+    .hint { font-size: .78rem; color: var(--text-muted); margin-top: .4rem; }
+    .btn-test { padding: .6rem 1rem; background: var(--kobo-teal); color: #fff; border: none; border-radius: 8px; font-size: .88rem; font-weight: 600; cursor: pointer; white-space: nowrap; }
+    .btn-test:hover { background: #008f8a; }
+    .status-box { margin-top: 1rem; padding: .75rem 1rem; border-radius: 8px; font-size: .87rem; display: none; }
+    .status-box.ok { background: #d1fae5; color: #065f46; display: block; }
+    .status-box.err { background: #fee2e2; color: #991b1b; display: block; }
+    .render-steps code { background: #f1f5f9; padding: .15rem .4rem; border-radius: 4px; font-size: .85rem; }
+    .render-steps ol { padding-left: 1.2rem; }
+    .render-steps li { margin-bottom: .5rem; font-size: .88rem; line-height: 1.55; }
+    .back-link { display: inline-block; margin-bottom: 1rem; color: var(--kobo-teal); font-size: .9rem; text-decoration: none; }
+    .back-link:hover { text-decoration: underline; }
+    .topic-display { font-size: .82rem; color: var(--text-muted); margin-top: .35rem; }
+    .topic-display span { color: var(--kobo-teal); font-weight: 600; }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="header-inner">
+      <div class="logo-area">
+        <span class="logo-icon">📚</span>
+        <div>
+          <h1>Kobo 99元週特賣</h1>
+          <p class="tagline">通知設定</p>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <div class="settings-wrap">
+    <a href="/" class="back-link">← 回到書單首頁</a>
+
+    <!-- Step 1: install ntfy -->
+    <div class="settings-card">
+      <h2>🔔 設定手機推播通知</h2>
+      <p class="card-desc">每週四書單更新時，手機會自動收到通知。使用免費的 <strong>ntfy</strong> app 接收推播。</p>
+
+      <div class="step">
+        <div class="step-num">1</div>
+        <div class="step-body">
+          <strong>安裝 ntfy app</strong>（免費）
+          <div class="app-badges">
+            <a class="badge badge-ios" href="https://apps.apple.com/app/ntfy/id1625396347" target="_blank">📱 App Store</a>
+            <a class="badge badge-android" href="https://play.google.com/store/apps/details?id=io.heckel.ntfy" target="_blank">🤖 Google Play</a>
+          </div>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="step-num">2</div>
+        <div class="step-body">
+          <strong>訂閱你的專屬頻道</strong><br/>
+          打開 ntfy app → 右下角 <strong>+</strong> → 輸入下方你設定的頻道名稱 → Subscribe
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="step-num">3</div>
+        <div class="step-body">
+          <strong>在 Render 設定環境變數</strong>（見下方說明）<br/>
+          設定好後點「發送測試通知」確認能收到
+        </div>
+      </div>
+    </div>
+
+    <!-- Render env var instructions -->
+    <div class="settings-card render-steps">
+      <h2>⚙️ 在 Render 設定環境變數</h2>
+      <p class="card-desc">因為環境變數要在伺服器上設定，請照以下步驟操作（只需要做一次）：</p>
+      <ol>
+        <li>前往 <strong>render.com</strong> → 進入你的 <strong>kobo-99-deals</strong> 服務</li>
+        <li>點左側選單 <strong>Environment</strong></li>
+        <li>點 <strong>Add Environment Variable</strong></li>
+        <li>Key 填 <code>NTFY_TOPIC</code>，Value 填你想要的頻道名稱（英文+數字，例如 <code>kobo99-alice-2024</code>）</li>
+        <li>點 <strong>Save Changes</strong> → Render 會自動重新部署</li>
+        <li>回到這個頁面，點「發送測試通知」確認</li>
+      </ol>
+      <p class="hint">💡 頻道名稱是公開的，建議加一串隨機數字讓別人不容易猜到，例如 <code>kobo99-alice-5829</code></p>
+    </div>
+
+    <!-- Test notification -->
+    <div class="settings-card">
+      <h2>🧪 測試通知</h2>
+      {% if ntfy_topic %}
+      <p class="topic-display">目前設定的頻道：<span>{{ ntfy_topic }}</span></p>
+      <p class="card-desc" style="margin-top:.5rem">確認已在 ntfy app 訂閱此頻道後，點下方按鈕發送測試通知。</p>
+      <button class="btn-test" onclick="testNotify()">📣 發送測試通知</button>
+      {% else %}
+      <p class="card-desc" style="color:#e67e22">⚠️ 尚未設定 NTFY_TOPIC 環境變數，請先照上方步驟設定。</p>
+      {% endif %}
+      <div class="status-box" id="statusBox"></div>
+    </div>
+  </div>
+
+  <div id="toast" class="toast hidden"></div>
+
+  <script>
+    async function testNotify() {
+      const box = document.getElementById('statusBox');
+      box.className = 'status-box';
+      box.textContent = '傳送中…';
+      box.style.display = 'block';
+      try {
+        const res = await fetch('/api/test_notify', { method: 'POST' });
+        if (res.ok) {
+          box.className = 'status-box ok';
+          box.textContent = '✅ 測試通知已發送！請檢查手機的 ntfy app。';
+        } else {
+          const d = await res.json();
+          box.className = 'status-box err';
+          box.textContent = '❌ 發送失敗：' + (d.detail || '未知錯誤');
+        }
+      } catch(e) {
+        box.className = 'status-box err';
+        box.textContent = '❌ 網路錯誤，請稍後再試';
+      }
+    }
+  </script>
+</body>
+</html>

@@ -9,18 +9,19 @@ from apscheduler.triggers.cron import CronTrigger
 from .scraper import scrape_weekly_deals
 from .ratings import fetch_all_ratings
 from .database import init_db, upsert_book, upsert_rating
+from .notify import send_weekly_notification
 
 logger = logging.getLogger(__name__)
 
 
-def refresh_weekly_deals():
+def refresh_weekly_deals(notify: bool = True):
     logger.info("Starting weekly deal refresh...")
     init_db()
     week_date, books = scrape_weekly_deals()
 
     if not books:
         logger.warning("No books scraped for week %s", week_date)
-        return {"week_date": week_date, "books_updated": 0}
+        return {"week_date": week_date, "books_updated": 0, "source": "joanneinhk.com"}
 
     updated = 0
     for book in books:
@@ -36,8 +37,11 @@ def refresh_weekly_deals():
             )
         updated += 1
 
+    if notify and updated > 0:
+        send_weekly_notification(books, week_date)
+
     logger.info("Refreshed %d books for week %s", updated, week_date)
-    return {"week_date": week_date, "books_updated": updated}
+    return {"week_date": week_date, "books_updated": updated, "source": "joanneinhk.com"}
 
 
 def create_scheduler() -> BackgroundScheduler:
