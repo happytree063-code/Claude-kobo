@@ -422,7 +422,7 @@
     <span class="tab-label">分析</span>
   </button>
   <button class="tab-item" id="tab-fire" onclick="switchTab('fire')">
-    <span class="tab-icon">★</span>
+    <span class="tab-icon">◎</span>
     <span class="tab-label">退休</span>
   </button>
   <button class="tab-item" id="tab-settings" onclick="switchTab('settings')">
@@ -573,6 +573,7 @@ function makeDefault() {
     lastUpdated: null,
     stockDetails: {},
     firePlan: null,
+    fireParams: null,
     categories: [
       {
         id: uid(), name: '投資資金',
@@ -607,6 +608,7 @@ function loadData() {
       if (!('scriptUrl' in appData)) appData.scriptUrl = '';
       if (!appData.stockDetails) appData.stockDetails = {};
       if (!('firePlan' in appData)) appData.firePlan = null;
+      if (!('fireParams' in appData)) appData.fireParams = null;
     } else {
       appData = makeDefault();
     }
