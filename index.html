@@ -533,6 +533,35 @@
 
 <input type="file" id="import-file-input" accept=".json" style="display:none" onchange="handleImport(event)" />
 
+<!-- ── FIRE PARAMS MODAL ──────────────────────────────────────────── -->
+<div class="modal-overlay" id="fire-params-modal" onclick="closeModalOnBg(event,'fire-params-modal')">
+  <div class="modal">
+    <div class="modal-handle"></div>
+    <div class="modal-title">FIRE 計畫參數</div>
+    <div class="form-group">
+      <div class="form-label">年度目標支出 (TWD)</div>
+      <input class="form-input" id="fp-expenses" type="number" inputmode="numeric" placeholder="720000" />
+      <div class="form-hint">FIRE所需資產 = 年度支出 ÷ 安全提領率</div>
+    </div>
+    <div class="form-group">
+      <div class="form-label">安全提領率 (%)</div>
+      <input class="form-input" id="fp-swr" type="number" inputmode="decimal" step="0.1" placeholder="4" />
+    </div>
+    <div class="form-group">
+      <div class="form-label">預期年報酬率 (%)</div>
+      <input class="form-input" id="fp-return" type="number" inputmode="decimal" step="1" placeholder="8" />
+    </div>
+    <div class="form-group">
+      <div class="form-label">通膨率 (%)</div>
+      <input class="form-input" id="fp-inflation" type="number" inputmode="decimal" step="0.5" placeholder="2" />
+    </div>
+    <div class="btn-row">
+      <button class="btn btn-secondary" onclick="closeModal('fire-params-modal')">取消</button>
+      <button class="btn btn-primary" onclick="saveFireParams()">套用</button>
+    </div>
+  </div>
+</div>
+
 <script>
 // ── Constants ──────────────────────────────────────────────────────────────────
 const COLORS = [
@@ -1062,6 +1091,17 @@ function handleImport(e) {
 }
 
 // ── FIRE Plan ─────────────────────────────────────────────────────────────────
+function getFireParams() {
+  const fp = appData.fireParams;
+  const plan = appData.firePlan;
+  return {
+    annualExpenses:    (fp && fp.annualExpenses)    || (plan && plan.annualExpenses)    || 600000,
+    safeWithdrawalRate:(fp && fp.safeWithdrawalRate)|| (plan && plan.safeWithdrawalRate)|| 0.04,
+    returnRate:        (fp && fp.returnRate)        || (plan && plan.returnRate)        || 1.08,
+    inflationRate:     (fp && fp.inflationRate)     || (plan && plan.inflationRate)     || 1.02,
+  };
+}
+
 function renderFire() {
   const container = document.getElementById('fire-content');
   if (!container) return;
@@ -1076,13 +1116,21 @@ function renderFire() {
     return;
   }
 
+  const params = getFireParams();
+  const fireNum = Math.round(params.annualExpenses / params.safeWithdrawalRate);
+
+  // Recalculate FIRE milestone: first year projected assets >= fireNum
+  let fireYear = null, fireAge = null;
+  for (const t of plan.table) {
+    if (t.assets >= fireNum) { fireYear = t.year; fireAge = t.age; break; }
+  }
+
   // Investment total from app data (TWD)
   const investCat = appData.categories.find(c => c.name === '投資資金');
   const investTWD = investCat
     ? investCat.assets.reduce((s, a) => s + toTWD(a.amount, a.currency), 0)
     : 0;
 
-  const fireNum = plan.fireNumber || Math.round(plan.annualExpenses / plan.safeWithdrawalRate);
   const progressRaw = fireNum > 0 ? (investTWD / fireNum * 100) : 0;
   const progressBar = Math.min(progressRaw, 100);
   const reached = progressRaw >= 100;
@@ -1093,13 +1141,14 @@ function renderFire() {
   const dispInvest = appData.displayCurrency === 'USD' ? investTWD * appData.exchangeRate : investTWD;
   const dispFireNum = appData.displayCurrency === 'USD' ? fireNum * appData.exchangeRate : fireNum;
   const accentColor = reached ? 'var(--accent-green)' : 'var(--accent-gold)';
+  const hasOverride = !!appData.fireParams;
 
   container.innerHTML = `
     <div class="card" style="margin-bottom:12px">
       <div style="text-align:center;padding:8px 0 4px">
         <div style="font-size:12px;color:var(--text-secondary);margin-bottom:6px">預計 FIRE 年齡</div>
-        <div style="font-size:58px;font-weight:800;letter-spacing:-2px;color:${reached ? 'var(--accent-green)' : 'var(--text-primary)'};line-height:1">${plan.fireAge ?? '—'}</div>
-        <div style="font-size:15px;color:var(--text-secondary);margin-top:4px">歲 · ${plan.fireYear ?? '—'} 年</div>
+        <div style="font-size:58px;font-weight:800;letter-spacing:-2px;color:${reached ? 'var(--accent-green)' : 'var(--text-primary)'};line-height:1">${fireAge ?? '—'}</div>
+        <div style="font-size:15px;color:var(--text-secondary);margin-top:4px">歲 · ${fireYear ?? '—'} 年</div>
         ${reached ? `<div style="margin-top:12px;display:inline-block;padding:5px 18px;background:#f0f7e6;border-radius:20px;font-size:13px;font-weight:700;color:var(--accent-green)">已達成 FIRE 目標 ✓</div>` : ''}
       </div>
     </div>
@@ -1146,16 +1195,24 @@ function renderFire() {
     </div>
 
     <div class="card" style="margin-bottom:12px">
-      <div style="font-size:11px;font-weight:700;color:var(--text-secondary);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px">計畫參數</div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
+        <div style="font-size:11px;font-weight:700;color:var(--text-secondary);text-transform:uppercase;letter-spacing:0.5px">
+          計畫參數${hasOverride ? ' <span style="color:var(--accent-gold);font-size:10px">(已自訂)</span>' : ''}
+        </div>
+        <button onclick="openFireParamsModal()" style="background:none;border:1.5px solid var(--border);border-radius:12px;padding:4px 12px;font-size:12px;font-weight:600;color:var(--accent-green);cursor:pointer;font-family:inherit">修改</button>
+      </div>
       ${[
-        ['年度目標支出', 'NT$' + Math.round(plan.annualExpenses).toLocaleString()],
-        ['安全提領率', (plan.safeWithdrawalRate * 100).toFixed(0) + '%'],
-        ['預期報酬率', ((plan.returnRate - 1) * 100).toFixed(0) + '%'],
-        ['通膨率', ((plan.inflationRate - 1) * 100).toFixed(0) + '%'],
+        ['年度目標支出', 'NT$' + Math.round(params.annualExpenses).toLocaleString()],
+        ['安全提領率',   (params.safeWithdrawalRate * 100).toFixed(1) + '%'],
+        ['預期報酬率',   ((params.returnRate - 1) * 100).toFixed(0) + '%'],
+        ['通膨率',       ((params.inflationRate - 1) * 100).toFixed(0) + '%'],
       ].map(([l, v]) => `<div style="display:flex;justify-content:space-between;padding:10px 0;border-top:1px solid var(--border)">
         <span style="font-size:14px;color:var(--text-secondary)">${l}</span>
         <span style="font-size:14px;font-weight:700">${v}</span>
       </div>`).join('')}
+      ${hasOverride ? `<div style="padding-top:10px;border-top:1px solid var(--border)">
+        <button onclick="resetFireParams()" style="background:none;border:none;color:var(--text-tertiary);font-size:12px;cursor:pointer;font-family:inherit;padding:0">恢復 Sheet 預設值</button>
+      </div>` : ''}
     </div>`;
 
   // Draw the line chart
@@ -1198,6 +1255,38 @@ function renderFire() {
       }
     }
   });
+}
+
+function openFireParamsModal() {
+  const p = getFireParams();
+  document.getElementById('fp-expenses').value = Math.round(p.annualExpenses);
+  document.getElementById('fp-swr').value = (p.safeWithdrawalRate * 100).toFixed(1);
+  document.getElementById('fp-return').value = ((p.returnRate - 1) * 100).toFixed(0);
+  document.getElementById('fp-inflation').value = ((p.inflationRate - 1) * 100).toFixed(0);
+  openModal('fire-params-modal');
+}
+
+function saveFireParams() {
+  const expenses = parseFloat(document.getElementById('fp-expenses').value);
+  const swr = parseFloat(document.getElementById('fp-swr').value);
+  const ret = parseFloat(document.getElementById('fp-return').value);
+  const inf = parseFloat(document.getElementById('fp-inflation').value);
+  if (!expenses || !swr) return;
+  appData.fireParams = {
+    annualExpenses: expenses,
+    safeWithdrawalRate: swr / 100,
+    returnRate: (ret / 100) + 1,
+    inflationRate: (inf / 100) + 1,
+  };
+  saveData();
+  closeModal('fire-params-modal');
+  renderFire();
+}
+
+function resetFireParams() {
+  appData.fireParams = null;
+  saveData();
+  renderFire();
 }
 
 // ── Detail View (Stock Drill-down) ────────────────────────────────────────────
