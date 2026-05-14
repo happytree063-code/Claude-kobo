@@ -613,8 +613,8 @@ function renderGrid() {
     const col = document.createElement('div');
     col.className = 'day-header';
     col.innerHTML = `
-      <span class="day-dow${isWeekend?' weekend':''}">\${DOW[dow]}</span>
-      <span class="day-num${isToday?' today':''}">\${d}</span>`;
+      <span class="day-dow${isWeekend?' weekend':''}">${DOW[dow]}</span>
+      <span class="day-num${isToday?' today':''}">${d}</span>`;
     daysInner.appendChild(col);
   }
 
@@ -639,7 +639,7 @@ function renderGrid() {
     const nameCell = document.createElement('div');
     nameCell.className = 'habit-name-cell';
     nameCell.onclick = () => openEditModal(h.id);
-    nameCell.innerHTML = `<div class="habit-color-dot" style="background:\${h.color}"></div><div class="habit-name-text">\${h.name}</div>`;
+    nameCell.innerHTML = `<div class="habit-color-dot" style="background:${h.color}"></div><div class="habit-name-text">${h.name}</div>`;
 
     // days scroll
     const daysScroll = document.createElement('div');
@@ -686,8 +686,8 @@ function renderGrid() {
     const summary = document.createElement('div');
     summary.className = 'habit-summary';
     summary.innerHTML = `
-      <div class="summary-cell" style="color:var(--text-secondary)">\${goal}</div>
-      <div class="summary-cell"><span class="achieved-badge \${badgeClass}">\${achieved}</span></div>`;
+      <div class="summary-cell" style="color:var(--text-secondary)">${goal}</div>
+      <div class="summary-cell"><span class="achieved-badge ${badgeClass}">${achieved}</span></div>`;
 
     row.appendChild(nameCell);
     row.appendChild(daysScroll);
@@ -753,7 +753,7 @@ function renderStats() {
   const rate = possible > 0 ? Math.round(done / possible * 100) : 0;
 
   document.getElementById('stat-streak').textContent = bestStreak;
-  document.getElementById('stat-today').textContent = `\${todayDone}/\${data.habits.length}`;
+  document.getElementById('stat-today').textContent = `${todayDone}/${data.habits.length}`;
   document.getElementById('stat-days').textContent = trackedDays;
   document.getElementById('stat-rate').textContent = rate + '%';
 
@@ -767,13 +767,13 @@ function renderStats() {
     const best = getBestStreak(h.id);
     const achieved = monthAchieved(h.id, today.getFullYear(), today.getMonth());
     return `<div class="streak-row">
-      <div class="streak-dot" style="background:\${h.color}"></div>
+      <div class="streak-dot" style="background:${h.color}"></div>
       <div class="streak-info">
-        <div class="streak-name">\${h.name}</div>
-        <div class="streak-sub">本月達成 \${achieved} 天 · 最長 \${best} 天</div>
+        <div class="streak-name">${h.name}</div>
+        <div class="streak-sub">本月達成 ${achieved} 天 · 最長 ${best} 天</div>
       </div>
       <div>
-        <div class="streak-val" style="color:\${h.color}">\${streak}</div>
+        <div class="streak-val" style="color:${h.color}">${streak}</div>
         <div class="streak-unit">連續天</div>
       </div>
     </div>`;
@@ -789,11 +789,11 @@ function renderManage() {
   }
   list.style.display = 'block'; empty.style.display = 'none';
   list.innerHTML = data.habits.map(h => `
-    <div class="manage-row" onclick="openEditModal('\${h.id}')">
-      <div class="manage-color" style="background:\${h.color}"></div>
+    <div class="manage-row" onclick="openEditModal('${h.id}')">
+      <div class="manage-color" style="background:${h.color}"></div>
       <div class="manage-info">
-        <div class="manage-name">\${h.name}</div>
-        <div class="manage-goal">每月目標：\${h.goal || 20} 天</div>
+        <div class="manage-name">${h.name}</div>
+        <div class="manage-goal">每月目標：${h.goal || 20} 天</div>
       </div>
       <div class="manage-arrow">›</div>
     </div>`).join('');
@@ -817,8 +817,8 @@ function closeModalOnBg(e, id) { if (e.target.id === id) closeModal(id); }
 
 function buildColorPicker() {
   document.getElementById('color-picker').innerHTML = COLORS.map(c =>
-    `<div class="color-option\${c === selectedColor ? ' selected' : ''}"
-          style="background:\${c}" onclick="pickColor('\${c}')"></div>`
+    `<div class="color-option${c === selectedColor ? ' selected' : ''}"
+          style="background:${c}" onclick="pickColor('${c}')"></div>`
   ).join('');
 }
 
