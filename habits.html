@@ -6,6 +6,9 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <meta name="apple-mobile-web-app-title" content="習慣追蹤">
+  <meta name="theme-color" content="#267242">
+  <link rel="apple-touch-icon" href="icon.svg">
+  <link rel="icon" type="image/svg+xml" href="icon.svg">
   <title>每日習慣</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
@@ -31,9 +34,11 @@
       overflow-x: hidden;
     }
 
+    /* ── Views ── */
     .view { display: none; }
     .view.active { display: flex; flex-direction: column; height: 100vh; }
 
+    /* ── Month nav ── */
     .month-nav {
       display: flex;
       align-items: center;
@@ -58,6 +63,15 @@
     .month-nav-btn:active { background: var(--border); }
     .month-title { font-size: 17px; font-weight: 700; min-width: 120px; text-align: center; }
 
+    /* ── Grid container ── */
+    .grid-scroll-area {
+      flex: 1;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* Header row (day numbers) */
     .grid-header {
       display: flex;
       flex-shrink: 0;
@@ -80,7 +94,9 @@
       scrollbar-width: none;
     }
     .grid-header-days::-webkit-scrollbar { display: none; }
-    .grid-header-days-inner { display: flex; }
+    .grid-header-days-inner {
+      display: flex;
+    }
     .day-header {
       width: var(--cell-size);
       min-width: var(--cell-size);
@@ -92,7 +108,6 @@
       gap: 1px;
     }
     .day-dow { font-size: 9px; font-weight: 600; color: var(--text-secondary); text-transform: uppercase; }
-    .day-dow.weekend { color: #C84C16; }
     .day-num {
       font-size: 12px; font-weight: 700;
       width: 22px; height: 22px;
@@ -100,7 +115,9 @@
       display: flex; align-items: center; justify-content: center;
     }
     .day-num.today { background: var(--accent); color: white; }
+    .day-dow.weekend { color: #ff6b6b; }
 
+    /* Right summary header */
     .grid-header-summary {
       display: flex;
       flex-shrink: 0;
@@ -112,10 +129,12 @@
       font-weight: 700;
       color: var(--accent);
       text-align: center;
+      padding: 4px 2px;
       display: flex; align-items: flex-end; justify-content: center;
       padding-bottom: 6px;
     }
 
+    /* Body rows */
     .grid-body {
       flex: 1;
       overflow-y: auto;
@@ -162,6 +181,8 @@
       align-items: center;
       justify-content: center;
       cursor: pointer;
+      transition: background 0.1s;
+      position: relative;
     }
     .habit-cell:active { opacity: 0.7; }
     .habit-cell.future { opacity: 0.3; pointer-events: none; }
@@ -169,32 +190,42 @@
       width: 26px; height: 26px;
       border-radius: 6px;
       display: flex; align-items: center; justify-content: center;
-      font-size: 13px; font-weight: 700;
+      font-size: 13px;
+      font-weight: 700;
       transition: all 0.15s;
     }
     .cell-inner.checked { color: white; }
     .cell-inner.unchecked { background: transparent; color: transparent; border: 1.5px solid var(--border); }
     .cell-inner.today-cell { border: 1.5px solid var(--accent) !important; }
 
+    /* Summary columns */
     .habit-summary {
       display: flex;
       flex-shrink: 0;
       align-items: center;
       border-left: 1px solid var(--border);
     }
-    .summary-cell { width: 46px; text-align: center; font-size: 13px; font-weight: 700; padding: 0 2px; }
+    .summary-cell {
+      width: 46px;
+      text-align: center;
+      font-size: 13px;
+      font-weight: 700;
+      padding: 0 2px;
+    }
     .achieved-badge {
       display: inline-block;
       min-width: 32px;
       padding: 3px 6px;
       border-radius: 8px;
-      font-size: 12px; font-weight: 800;
+      font-size: 12px;
+      font-weight: 800;
       text-align: center;
     }
-    .achieved-green { background: #69BF29; color: white; }
-    .achieved-yellow { background: #F9B403; color: #1c1c1e; }
+    .achieved-green { background: #34c759; color: white; }
+    .achieved-yellow { background: #ffd60a; color: #1c1c1e; }
     .achieved-gray { background: #e5e5ea; color: var(--text-secondary); }
 
+    /* Add habit row */
     .add-habit-row {
       display: flex;
       align-items: center;
@@ -203,17 +234,20 @@
       border-top: 1px solid var(--border);
       cursor: pointer;
       color: var(--accent);
-      font-size: 14px; font-weight: 600;
+      font-size: 14px;
+      font-weight: 600;
       gap: 6px;
       flex-shrink: 0;
-      padding-bottom: calc(12px + env(safe-area-inset-bottom,0px));
     }
     .add-habit-row:active { background: var(--bg); }
 
+    /* Empty state */
     .empty-grid {
       flex: 1;
-      display: flex; flex-direction: column;
-      align-items: center; justify-content: center;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
       gap: 12px;
       color: var(--text-secondary);
       background: var(--card);
@@ -222,6 +256,13 @@
     .empty-grid p { font-size: 16px; font-weight: 600; }
     .empty-grid small { font-size: 13px; color: var(--text-tertiary); }
 
+    /* ── Stats Tab ── */
+    .stats-scroll {
+      flex: 1;
+      overflow-y: auto;
+      padding: 16px;
+      padding-bottom: calc(var(--tab-height) + 16px);
+    }
     .stats-header {
       padding: max(env(safe-area-inset-top,0px),14px) 16px 10px;
       background: var(--card);
@@ -229,19 +270,14 @@
       flex-shrink: 0;
     }
     .stats-title { font-size: 22px; font-weight: 800; }
-    .stats-scroll {
-      flex: 1; overflow-y: auto;
-      padding: 16px;
-      padding-bottom: calc(var(--tab-height) + 16px);
-    }
 
     .stat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 14px; }
     .stat-card { background: var(--card); border-radius: 16px; padding: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.06); }
+    .stat-card.full { grid-column: 1/-1; }
     .stat-emoji { font-size: 22px; margin-bottom: 6px; }
     .stat-value { font-size: 26px; font-weight: 800; letter-spacing: -0.5px; }
     .stat-label { font-size: 12px; color: var(--text-secondary); margin-top: 2px; font-weight: 500; }
 
-    .section-label { font-size: 11px; font-weight: 700; color: var(--text-secondary); margin: 16px 0 8px 2px; text-transform: uppercase; letter-spacing: 0.4px; }
     .streak-list { background: var(--card); border-radius: 16px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.06); }
     .streak-row { display: flex; align-items: center; gap: 12px; padding: 13px 16px; border-bottom: 1px solid var(--border); }
     .streak-row:last-child { border-bottom: none; }
@@ -252,6 +288,13 @@
     .streak-val { font-size: 18px; font-weight: 800; }
     .streak-unit { font-size: 10px; color: var(--text-secondary); text-align: right; }
 
+    /* ── Manage Tab ── */
+    .manage-scroll {
+      flex: 1;
+      overflow-y: auto;
+      padding: 16px;
+      padding-bottom: calc(var(--tab-height) + 16px);
+    }
     .manage-header {
       padding: max(env(safe-area-inset-top,0px),14px) 16px 10px;
       background: var(--card);
@@ -259,7 +302,6 @@
       flex-shrink: 0;
     }
     .manage-title { font-size: 22px; font-weight: 800; }
-    .manage-scroll { flex: 1; overflow-y: auto; padding: 16px; padding-bottom: calc(var(--tab-height) + 16px); }
 
     .manage-list-card { background: var(--card); border-radius: 16px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.06); margin-bottom: 12px; }
     .manage-row { display: flex; align-items: center; gap: 12px; padding: 14px 16px; border-bottom: 1px solid var(--border); cursor: pointer; transition: background 0.1s; }
@@ -271,9 +313,10 @@
     .manage-goal { font-size: 12px; color: var(--text-secondary); margin-top: 2px; }
     .manage-arrow { color: var(--text-tertiary); font-size: 18px; }
 
-    .add-btn-full { width: 100%; padding: 15px; border-radius: 14px; border: none; background: var(--accent); color: white; font-size: 16px; font-weight: 700; cursor: pointer; font-family: inherit; transition: opacity 0.1s; box-shadow: 0 4px 12px rgba(38,114,66,0.3); }
+    .add-btn-full { width: 100%; padding: 15px; border-radius: 14px; border: none; background: var(--accent); color: white; font-size: 16px; font-weight: 700; cursor: pointer; font-family: inherit; transition: opacity 0.1s; box-shadow: 0 4px 12px rgba(74,108,247,0.3); }
     .add-btn-full:active { opacity: 0.8; }
 
+    /* ── Tab bar ── */
     .tab-bar {
       position: fixed;
       bottom: 0; left: 0; right: 0;
@@ -282,14 +325,17 @@
       -webkit-backdrop-filter: blur(20px);
       border-top: 1px solid rgba(0,0,0,0.08);
       padding: 6px 0 calc(6px + env(safe-area-inset-bottom,0px));
-      display: flex; justify-content: space-around;
+      display: flex;
+      justify-content: space-around;
       z-index: 100;
     }
     .tab-item { display: flex; flex-direction: column; align-items: center; gap: 2px; background: none; border: none; cursor: pointer; padding: 4px 24px; color: var(--text-tertiary); transition: color 0.15s; font-family: inherit; }
     .tab-item.active { color: var(--accent); }
-    .tab-icon { font-size: 22px; line-height: 1; }
+    .tab-icon { width: 24px; height: 24px; display: flex; align-items: center; justify-content: center; }
+    .tab-icon svg { width: 24px; height: 24px; }
     .tab-label { font-size: 10px; font-weight: 600; }
 
+    /* ── Modal ── */
     .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 200; display: flex; align-items: flex-end; justify-content: center; opacity: 0; pointer-events: none; transition: opacity 0.25s; }
     .modal-overlay.open { opacity: 1; pointer-events: all; }
     .modal { width: 100%; max-width: 500px; background: var(--card); border-radius: 24px 24px 0 0; padding: 20px 20px calc(24px + env(safe-area-inset-bottom,0px)); transform: translateY(100%); transition: transform 0.32s cubic-bezier(0.32,0.72,0,1); max-height: 90vh; overflow-y: auto; }
@@ -301,7 +347,7 @@
     .form-label { font-size: 11px; font-weight: 700; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px; }
     .form-input { width: 100%; padding: 13px 14px; border: 1.5px solid var(--border); border-radius: 12px; font-size: 16px; font-family: inherit; background: var(--bg); color: var(--text-primary); outline: none; transition: border-color 0.15s; }
     .form-input:focus { border-color: var(--accent); }
-    .form-input.error { border-color: #C84C16; }
+    .form-input.error { border-color: #ff3b30; }
 
     .color-picker { display: flex; gap: 10px; flex-wrap: wrap; }
     .color-option { width: 32px; height: 32px; border-radius: 16px; border: 3px solid transparent; cursor: pointer; transition: transform 0.15s; }
@@ -312,7 +358,9 @@
     .btn:active { opacity: 0.75; }
     .btn-primary { background: var(--accent); color: white; }
     .btn-secondary { background: var(--bg); color: var(--text-primary); }
-    .btn-danger { background: #fff0f0; color: #C84C16; }
+    .btn-danger { background: #fff0f0; color: #ff3b30; }
+
+    .section-label { font-size: 13px; font-weight: 700; color: var(--text-secondary); margin: 16px 0 8px 2px; text-transform: uppercase; letter-spacing: 0.4px; font-size: 11px; }
 
     @keyframes fadeUp { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
     .fade-up { animation: fadeUp 0.25s ease; }
@@ -320,12 +368,15 @@
 </head>
 <body>
 
+<!-- ── GRID TAB ── -->
 <div id="view-grid" class="view active">
   <div class="month-nav">
     <button class="month-nav-btn" onclick="changeMonth(-1)">‹</button>
     <div class="month-title" id="month-title"></div>
     <button class="month-nav-btn" onclick="changeMonth(1)">›</button>
   </div>
+
+  <!-- header: name col + day numbers + summary cols -->
   <div class="grid-header" id="grid-header">
     <div class="grid-header-name">習慣</div>
     <div class="grid-header-days" id="grid-header-days">
@@ -336,37 +387,44 @@
       <div class="summary-col-header">達成</div>
     </div>
   </div>
+
+  <!-- body -->
   <div class="grid-body" id="grid-body"></div>
+
+  <!-- empty state -->
   <div class="empty-grid" id="empty-grid" style="display:none">
     <div class="emoji">🌱</div>
     <p>還沒有習慣</p>
     <small>點下方新增你的第一個習慣</small>
   </div>
+
   <div class="add-habit-row" onclick="openAddModal()">
     <span style="font-size:18px">+</span> 新增習慣
   </div>
 </div>
 
+<!-- ── STATS TAB ── -->
 <div id="view-stats" class="view">
   <div class="stats-header"><div class="stats-title">統計</div></div>
   <div class="stats-scroll">
     <div class="stat-grid">
-      <div class="stat-card"><div class="stat-emoji">🔥</div><div class="stat-value" id="stat-streak">0</div><div class="stat-label">最長連續天數</div></div>
-      <div class="stat-card"><div class="stat-emoji">✅</div><div class="stat-value" id="stat-today">0</div><div class="stat-label">今日完成</div></div>
-      <div class="stat-card"><div class="stat-emoji">📅</div><div class="stat-value" id="stat-days">0</div><div class="stat-label">有記錄的天數</div></div>
-      <div class="stat-card"><div class="stat-emoji">⚡</div><div class="stat-value" id="stat-rate">0%</div><div class="stat-label">本月完成率</div></div>
+      <div class="stat-card"><div class="stat-emoji"><svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="#E7980A" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2c0 4-4 6-4 10a4 4 0 0 0 8 0c0-4-4-6-4-10z"/><path d="M12 12c0 2-2 3-2 5a2 2 0 0 0 4 0c0-2-2-3-2-5z" fill="#E7980A" stroke="none"/></svg></div><div class="stat-value" id="stat-streak">0</div><div class="stat-label">最長連續天數</div></div>
+      <div class="stat-card"><div class="stat-emoji"><svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="#267242" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M8 12l3 3 5-5"/></svg></div><div class="stat-value" id="stat-today">0</div><div class="stat-label">今日完成</div></div>
+      <div class="stat-card"><div class="stat-emoji"><svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="#A6BE42" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="17" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="8" y1="4" x2="8" y2="9"/><line x1="16" y1="4" x2="16" y2="9"/></svg></div><div class="stat-value" id="stat-days">0</div><div class="stat-label">有記錄的天數</div></div>
+      <div class="stat-card"><div class="stat-emoji"><svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="#F9B403" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L4 14h8l-1 8 9-12h-8l1-8z"/></svg></div><div class="stat-value" id="stat-rate">0%</div><div class="stat-label">本月完成率</div></div>
     </div>
     <div class="section-label">各習慣連續天數</div>
     <div class="streak-list" id="streak-list"></div>
   </div>
 </div>
 
+<!-- ── MANAGE TAB ── -->
 <div id="view-manage" class="view">
   <div class="manage-header"><div class="manage-title">習慣管理</div></div>
   <div class="manage-scroll">
     <div class="manage-list-card" id="manage-list"></div>
     <div id="empty-manage" style="display:none;text-align:center;padding:32px 0;color:var(--text-secondary)">
-      <div style="font-size:40px;margin-bottom:10px">🌿</div>
+      <div style="font-size:40px;margin-bottom:10px">🎯</div>
       <div style="font-weight:600;margin-bottom:4px">尚無習慣</div>
       <div style="font-size:13px;color:var(--text-tertiary)">點下方按鈕新增</div>
     </div>
@@ -375,12 +433,23 @@
   </div>
 </div>
 
+<!-- Tab bar -->
 <div class="tab-bar">
-  <button class="tab-item active" id="tab-grid" onclick="switchTab('grid')"><span class="tab-icon">📋</span><span class="tab-label">月曆</span></button>
-  <button class="tab-item" id="tab-stats" onclick="switchTab('stats')"><span class="tab-icon">📊</span><span class="tab-label">統計</span></button>
-  <button class="tab-item" id="tab-manage" onclick="switchTab('manage')"><span class="tab-icon">⚙️</span><span class="tab-label">管理</span></button>
+  <button class="tab-item active" id="tab-grid" onclick="switchTab('grid')">
+    <span class="tab-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="17" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="8" y1="4" x2="8" y2="9"/><line x1="16" y1="4" x2="16" y2="9"/><circle cx="8" cy="14" r="1" fill="currentColor" stroke="none"/><circle cx="12" cy="14" r="1" fill="currentColor" stroke="none"/><circle cx="16" cy="14" r="1" fill="currentColor" stroke="none"/><circle cx="8" cy="18" r="1" fill="currentColor" stroke="none"/><circle cx="12" cy="18" r="1" fill="currentColor" stroke="none"/></svg></span>
+    <span class="tab-label">月曆</span>
+  </button>
+  <button class="tab-item" id="tab-stats" onclick="switchTab('stats')">
+    <span class="tab-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="20" x2="20" y2="20"/><rect x="5" y="13" width="3.5" height="7" rx="1" fill="currentColor" stroke="none"/><rect x="10.3" y="8" width="3.5" height="12" rx="1" fill="currentColor" stroke="none"/><rect x="15.5" y="4" width="3.5" height="16" rx="1" fill="currentColor" stroke="none"/></svg></span>
+    <span class="tab-label">統計</span>
+  </button>
+  <button class="tab-item" id="tab-manage" onclick="switchTab('manage')">
+    <span class="tab-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><line x1="9" y1="6" x2="20" y2="6"/><line x1="9" y1="12" x2="20" y2="12"/><line x1="9" y1="18" x2="20" y2="18"/><circle cx="5" cy="6" r="1.5" fill="currentColor" stroke="none"/><circle cx="5" cy="12" r="1.5" fill="currentColor" stroke="none"/><circle cx="5" cy="18" r="1.5" fill="currentColor" stroke="none"/></svg></span>
+    <span class="tab-label">管理</span>
+  </button>
 </div>
 
+<!-- Add/Edit Modal -->
 <div class="modal-overlay" id="habit-modal" onclick="closeModalOnBg(event,'habit-modal')">
   <div class="modal">
     <div class="modal-handle"></div>
@@ -408,221 +477,417 @@
 </div>
 
 <script>
-const COLORS=['#267242','#69BF29','#A6BE42','#DAC561','#D9D5C4','#F9B403','#E9A103','#C84C16','#E7980A','#F8D0C0'];
-const DOW=['日','一','二','三','四','五','六'];
-let data,viewYear,viewMonth,editingId=null,selectedColor=COLORS[0];
+// ─── Config ──────────────────────────────────────────────────
+const COLORS = [
+  '#267242','#69BF29','#A6BE42','#DAC561','#D9D5C4',
+  '#F9B403','#E9A103','#C84C16','#E7980A','#F8D0C0'
+];
+const PASTEL = {
+  '#4a6cf7': '#dde5ff',
+  '#34c759': '#d4f5e0',
+  '#ff9500': '#fff0cc',
+  '#ff6b6b': '#ffd6d6',
+  '#af52de': '#ead6f5',
+  '#00c7be': '#ccf2f0',
+  '#f7b731': '#fef3cc',
+  '#5ac8fa': '#d6f0ff',
+  '#e05c8a': '#fad6e6',
+  '#8bc34a': '#e4f5cc',
+};
+const DOW = ['日','一','二','三','四','五','六'];
 
-function uid(){return Math.random().toString(36).slice(2,9);}
-function dk(y,m,d){return `${y}-${String(m+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;}
-function todayDK(){const d=new Date();return dk(d.getFullYear(),d.getMonth(),d.getDate());}
-function daysInMonth(y,m){return new Date(y,m+1,0).getDate();}
-function isChecked(hid,key){return !!(data.records[key]&&data.records[key][hid]);}
+// ─── State ───────────────────────────────────────────────────
+let data; // { habits: [], records: {} }
+let viewYear, viewMonth; // currently displayed month (0-indexed)
+let editingId = null;
+let selectedColor = COLORS[0];
 
-function toggle(hid,key){
-  if(!data.records[key])data.records[key]={};
-  if(data.records[key][hid])delete data.records[key][hid];
-  else data.records[key][hid]=true;
-  if(!Object.keys(data.records[key]).length)delete data.records[key];
+// ─── Helpers ─────────────────────────────────────────────────
+function uid() { return Math.random().toString(36).slice(2,9); }
+
+function dk(year, month, day) {
+  return `${year}-${String(month+1).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
+}
+
+function todayDK() {
+  const d = new Date();
+  return dk(d.getFullYear(), d.getMonth(), d.getDate());
+}
+
+function daysInMonth(year, month) {
+  return new Date(year, month+1, 0).getDate();
+}
+
+function isChecked(habitId, dateKey) {
+  return !!(data.records[dateKey] && data.records[dateKey][habitId]);
+}
+
+function toggle(habitId, dateKey) {
+  if (!data.records[dateKey]) data.records[dateKey] = {};
+  if (data.records[dateKey][habitId]) delete data.records[dateKey][habitId];
+  else data.records[dateKey][habitId] = true;
+  // clean up empty date record
+  if (Object.keys(data.records[dateKey]).length === 0) delete data.records[dateKey];
   save();
 }
 
-function getStreak(hid){
-  let s=0,start=isChecked(hid,todayDK())?0:1,today=new Date();
-  for(let i=start;i<500;i++){
-    const d=new Date(today);d.setDate(d.getDate()-i);
-    const k=dk(d.getFullYear(),d.getMonth(),d.getDate());
-    if(data.records[k]&&data.records[k][hid])s++;
-    else if(i>=start)break;
+function getStreak(habitId) {
+  let streak = 0;
+  const today = new Date();
+  // start from today; if today not checked, start from yesterday
+  let start = isChecked(habitId, todayDK()) ? 0 : 1;
+  for (let i = start; i < 500; i++) {
+    const d = new Date(today);
+    d.setDate(d.getDate() - i);
+    const key = dk(d.getFullYear(), d.getMonth(), d.getDate());
+    if (data.records[key] && data.records[key][habitId]) streak++;
+    else if (i >= start) break;
   }
-  return s;
+  return streak;
 }
 
-function getBestStreak(hid){
-  let best=0,cur=0;
-  for(let i=364;i>=0;i--){
-    const d=new Date();d.setDate(d.getDate()-i);
-    const k=dk(d.getFullYear(),d.getMonth(),d.getDate());
-    if(data.records[k]&&data.records[k][hid])cur++;
-    else{best=Math.max(best,cur);cur=0;}
+function getBestStreak(habitId) {
+  let best = 0, cur = 0;
+  for (let i = 364; i >= 0; i--) {
+    const d = new Date(); d.setDate(d.getDate() - i);
+    const key = dk(d.getFullYear(), d.getMonth(), d.getDate());
+    if (data.records[key] && data.records[key][habitId]) cur++;
+    else { best = Math.max(best, cur); cur = 0; }
   }
-  return Math.max(best,cur);
+  return Math.max(best, cur);
 }
 
-function monthAchieved(hid,y,m){
-  let c=0;for(let d=1;d<=daysInMonth(y,m);d++)if(isChecked(hid,dk(y,m,d)))c++;return c;
-}
-
-function save(){localStorage.setItem('habitData_v2',JSON.stringify(data));}
-
-function load(){
-  try{
-    const s=localStorage.getItem('habitData_v2');
-    if(s){data=JSON.parse(s);return;}
-    const v1=localStorage.getItem('habitData_v1');
-    if(v1){const o=JSON.parse(v1);data={habits:o.habits.map(h=>({id:h.id,name:h.name,color:h.color||COLORS[0],goal:20})),records:o.records||{}};return;}
-  }catch(e){}
-  data={habits:[
-    {id:uid(),name:'喝水 2L',color:'#267242',goal:20},
-    {id:uid(),name:'閱讀 30 分鐘',color:'#69BF29',goal:20},
-    {id:uid(),name:'運動',color:'#F9B403',goal:20},
-  ],records:{}};
-}
-
-function renderGrid(){
-  const today=new Date(),ty=today.getFullYear(),tm=today.getMonth(),td=today.getDate();
-  const days=daysInMonth(viewYear,viewMonth),isCur=(viewYear===ty&&viewMonth===tm);
-  document.getElementById('month-title').textContent=`${viewYear} 年 ${viewMonth+1} 月`;
-  const di=document.getElementById('grid-days-inner');di.innerHTML='';
-  for(let d=1;d<=days;d++){
-    const date=new Date(viewYear,viewMonth,d),dow=date.getDay();
-    const col=document.createElement('div');col.className='day-header';
-    col.innerHTML=`<span class="day-dow${(dow===0||dow===6)?' weekend':''}">${DOW[dow]}</span><span class="day-num${(isCur&&d===td)?' today':''}">${d}</span>`;
-    di.appendChild(col);
+function monthAchieved(habitId, year, month) {
+  let count = 0;
+  const days = daysInMonth(year, month);
+  for (let d = 1; d <= days; d++) {
+    if (isChecked(habitId, dk(year, month, d))) count++;
   }
-  const body=document.getElementById('grid-body'),emptyEl=document.getElementById('empty-grid');
-  if(!data.habits.length){body.innerHTML='';emptyEl.style.display='flex';return;}
-  emptyEl.style.display='none';body.innerHTML='';
-  data.habits.forEach(h=>{
-    const row=document.createElement('div');row.className='habit-row fade-up';
-    const nc=document.createElement('div');nc.className='habit-name-cell';nc.onclick=()=>openEditModal(h.id);
-    nc.innerHTML=`<div class="habit-color-dot" style="background:${h.color}"></div><div class="habit-name-text">${h.name}</div>`;
-    const ds=document.createElement('div');ds.className='habit-days-scroll';
-    const di2=document.createElement('div');di2.className='habit-days-inner';
-    for(let d=1;d<=days;d++){
-      const key=dk(viewYear,viewMonth,d),checked=isChecked(h.id,key);
-      const isToday=isCur&&d===td,isFuture=isCur&&d>td;
-      const cell=document.createElement('div');cell.className='habit-cell'+(isFuture?' future':'');
-      const inner=document.createElement('div');
-      inner.className='cell-inner '+(checked?'checked':'unchecked')+(isToday?' today-cell':'');
-      if(checked){inner.style.background=h.color;inner.textContent='✓';}
-      else if(isToday){inner.style.borderColor=h.color;}
-      cell.appendChild(inner);
-      if(!isFuture)cell.onclick=()=>{toggle(h.id,key);renderGrid();syncScroll();};
-      di2.appendChild(cell);
+  return count;
+}
+
+// ─── Persist ─────────────────────────────────────────────────
+function save() { localStorage.setItem('habitData_v2', JSON.stringify(data)); }
+
+function load() {
+  try {
+    const s = localStorage.getItem('habitData_v2');
+    if (s) { data = JSON.parse(s); return; }
+    // try migrating from v1
+    const v1 = localStorage.getItem('habitData_v1');
+    if (v1) {
+      const old = JSON.parse(v1);
+      data = { habits: old.habits.map(h => ({ id: h.id, name: h.name, color: h.color || COLORS[0], goal: 20 })), records: old.records || {} };
+      return;
     }
-    ds.appendChild(di2);
-    const achieved=monthAchieved(h.id,viewYear,viewMonth),goal=h.goal||20,pct=achieved/goal;
-    const bc=pct>=1?'achieved-green':pct>=0.7?'achieved-yellow':'achieved-gray';
-    const sum=document.createElement('div');sum.className='habit-summary';
-    sum.innerHTML=`<div class="summary-cell" style="color:var(--text-secondary)">${goal}</div><div class="summary-cell"><span class="achieved-badge ${bc}">${achieved}</span></div>`;
-    row.appendChild(nc);row.appendChild(ds);row.appendChild(sum);body.appendChild(row);
-  });
-  setTimeout(syncScroll,0);
+  } catch(e) {}
+  data = {
+    habits: [
+      { id: uid(), name: '喝水 2L', color: '#267242', goal: 20 },
+      { id: uid(), name: '閱讀 30 分鐘', color: '#69BF29', goal: 20 },
+      { id: uid(), name: '運動', color: '#F9B403', goal: 20 },
+    ],
+    records: {}
+  };
 }
 
-let isSyncing=false;
-function syncScroll(){
-  const header=document.getElementById('grid-header-days');
-  const rows=document.querySelectorAll('.habit-days-scroll');
-  const today=new Date();
-  if(viewYear===today.getFullYear()&&viewMonth===today.getMonth()){
-    const s=Math.max(0,(today.getDate()-4)*32);
-    header.scrollLeft=s;rows.forEach(r=>r.scrollLeft=s);
+// ─── Render: Grid ─────────────────────────────────────────────
+function renderGrid() {
+  const today = new Date();
+  const todayY = today.getFullYear(), todayM = today.getMonth(), todayD = today.getDate();
+  const days = daysInMonth(viewYear, viewMonth);
+  const isCurrent = (viewYear === todayY && viewMonth === todayM);
+
+  // month title
+  document.getElementById('month-title').textContent =
+    `${viewYear} 年 ${viewMonth+1} 月`;
+
+  // build day headers
+  const daysInner = document.getElementById('grid-days-inner');
+  daysInner.innerHTML = '';
+  for (let d = 1; d <= days; d++) {
+    const date = new Date(viewYear, viewMonth, d);
+    const dow = date.getDay();
+    const isToday = isCurrent && d === todayD;
+    const isWeekend = dow === 0 || dow === 6;
+    const col = document.createElement('div');
+    col.className = 'day-header';
+    col.innerHTML = `
+      <span class="day-dow${isWeekend?' weekend':''}">\${DOW[dow]}</span>
+      <span class="day-num${isToday?' today':''}">\${d}</span>`;
+    daysInner.appendChild(col);
   }
-  const all=[header,...rows];
-  all.forEach(el=>{
-    el.onscroll=()=>{
-      if(isSyncing)return;isSyncing=true;
-      all.forEach(o=>{if(o!==el)o.scrollLeft=el.scrollLeft;});
-      isSyncing=false;
+
+  // build body rows
+  const body = document.getElementById('grid-body');
+  const emptyEl = document.getElementById('empty-grid');
+
+  if (!data.habits.length) {
+    body.innerHTML = '';
+    emptyEl.style.display = 'flex';
+    return;
+  }
+  emptyEl.style.display = 'none';
+  body.innerHTML = '';
+
+  data.habits.forEach(h => {
+    const pastel = PASTEL[h.color] || '#e5e5ea';
+    const row = document.createElement('div');
+    row.className = 'habit-row fade-up';
+
+    // name cell
+    const nameCell = document.createElement('div');
+    nameCell.className = 'habit-name-cell';
+    nameCell.onclick = () => openEditModal(h.id);
+    nameCell.innerHTML = `<div class="habit-color-dot" style="background:\${h.color}"></div><div class="habit-name-text">\${h.name}</div>`;
+
+    // days scroll
+    const daysScroll = document.createElement('div');
+    daysScroll.className = 'habit-days-scroll';
+    const daysInner2 = document.createElement('div');
+    daysInner2.className = 'habit-days-inner';
+
+    for (let d = 1; d <= days; d++) {
+      const key = dk(viewYear, viewMonth, d);
+      const checked = isChecked(h.id, key);
+      const isToday = isCurrent && d === todayD;
+      const isFuture = isCurrent && d > todayD;
+
+      const cell = document.createElement('div');
+      cell.className = 'habit-cell' + (isFuture ? ' future' : '');
+      const inner = document.createElement('div');
+      inner.className = 'cell-inner ' + (checked ? 'checked' : 'unchecked') + (isToday ? ' today-cell' : '');
+      if (checked) {
+        inner.style.background = h.color;
+        inner.textContent = '✓';
+      } else {
+        inner.style.background = '';
+        if (isToday) inner.style.borderColor = h.color;
+      }
+      cell.appendChild(inner);
+      if (!isFuture) {
+        cell.onclick = () => {
+          toggle(h.id, key);
+          renderGrid();
+          // sync scrolls
+          syncScroll();
+        };
+      }
+      daysInner2.appendChild(cell);
+    }
+    daysScroll.appendChild(daysInner2);
+
+    // summary
+    const achieved = monthAchieved(h.id, viewYear, viewMonth);
+    const goal = h.goal || 20;
+    const pct = achieved / goal;
+    let badgeClass = pct >= 1 ? 'achieved-green' : pct >= 0.7 ? 'achieved-yellow' : 'achieved-gray';
+
+    const summary = document.createElement('div');
+    summary.className = 'habit-summary';
+    summary.innerHTML = `
+      <div class="summary-cell" style="color:var(--text-secondary)">\${goal}</div>
+      <div class="summary-cell"><span class="achieved-badge \${badgeClass}">\${achieved}</span></div>`;
+
+    row.appendChild(nameCell);
+    row.appendChild(daysScroll);
+    row.appendChild(summary);
+    body.appendChild(row);
+  });
+
+  // sync horizontal scroll across all rows + header
+  setTimeout(syncScroll, 0);
+}
+
+// keep all rows scrolled to same horizontal position
+let isSyncing = false;
+function syncScroll() {
+  const header = document.getElementById('grid-header-days');
+  const rows = document.querySelectorAll('.habit-days-scroll');
+  const today = new Date();
+  if (viewYear === today.getFullYear() && viewMonth === today.getMonth()) {
+    // scroll to show today
+    const todayD = today.getDate();
+    const scrollTo = Math.max(0, (todayD - 4) * 32);
+    header.scrollLeft = scrollTo;
+    rows.forEach(r => r.scrollLeft = scrollTo);
+  }
+  // link scroll events
+  const allScrollable = [header, ...rows];
+  allScrollable.forEach(el => {
+    el.onscroll = () => {
+      if (isSyncing) return;
+      isSyncing = true;
+      allScrollable.forEach(other => { if (other !== el) other.scrollLeft = el.scrollLeft; });
+      isSyncing = false;
     };
   });
 }
 
-function changeMonth(d){
-  viewMonth+=d;
-  if(viewMonth>11){viewMonth=0;viewYear++;}
-  if(viewMonth<0){viewMonth=11;viewYear--;}
+function changeMonth(delta) {
+  viewMonth += delta;
+  if (viewMonth > 11) { viewMonth = 0; viewYear++; }
+  if (viewMonth < 0) { viewMonth = 11; viewYear--; }
   renderGrid();
 }
 
-function renderStats(){
-  let best=0;data.habits.forEach(h=>{best=Math.max(best,getBestStreak(h.id));});
-  const today=new Date(),tk=todayDK();
-  const todayDone=data.habits.filter(h=>isChecked(h.id,tk)).length;
-  let possible=0,done=0;
-  for(let d=1;d<=today.getDate();d++){
-    const k=dk(today.getFullYear(),today.getMonth(),d);
-    data.habits.forEach(h=>{possible++;if(isChecked(h.id,k))done++;});
+// ─── Render: Stats ───────────────────────────────────────────
+function renderStats() {
+  let bestStreak = 0;
+  data.habits.forEach(h => { bestStreak = Math.max(bestStreak, getBestStreak(h.id)); });
+  const today = new Date();
+  const todayKey = todayDK();
+  const todayDone = data.habits.filter(h => isChecked(h.id, todayKey)).length;
+  const trackedDays = Object.keys(data.records).length;
+
+  // month completion rate
+  const days = daysInMonth(today.getFullYear(), today.getMonth());
+  let possible = 0, done = 0;
+  for (let d = 1; d <= today.getDate(); d++) {
+    const key = dk(today.getFullYear(), today.getMonth(), d);
+    data.habits.forEach(h => {
+      possible++;
+      if (isChecked(h.id, key)) done++;
+    });
   }
-  document.getElementById('stat-streak').textContent=best;
-  document.getElementById('stat-today').textContent=`${todayDone}/${data.habits.length}`;
-  document.getElementById('stat-days').textContent=Object.keys(data.records).length;
-  document.getElementById('stat-rate').textContent=(possible>0?Math.round(done/possible*100):0)+'%';
-  const list=document.getElementById('streak-list');
-  if(!data.habits.length){list.innerHTML='<div class="streak-row" style="color:var(--text-secondary);font-size:14px">尚無習慣</div>';return;}
-  list.innerHTML=data.habits.map(h=>{
-    const streak=getStreak(h.id),best2=getBestStreak(h.id);
-    const achieved=monthAchieved(h.id,today.getFullYear(),today.getMonth());
-    return `<div class="streak-row"><div class="streak-dot" style="background:${h.color}"></div><div class="streak-info"><div class="streak-name">${h.name}</div><div class="streak-sub">本月達成 ${achieved} 天 · 最長 ${best2} 天</div></div><div><div class="streak-val" style="color:${h.color}">${streak}</div><div class="streak-unit">連續天</div></div></div>`;
+  const rate = possible > 0 ? Math.round(done / possible * 100) : 0;
+
+  document.getElementById('stat-streak').textContent = bestStreak;
+  document.getElementById('stat-today').textContent = `\${todayDone}/\${data.habits.length}`;
+  document.getElementById('stat-days').textContent = trackedDays;
+  document.getElementById('stat-rate').textContent = rate + '%';
+
+  const list = document.getElementById('streak-list');
+  if (!data.habits.length) {
+    list.innerHTML = '<div class="streak-row" style="color:var(--text-secondary);font-size:14px">尚無習慣</div>';
+    return;
+  }
+  list.innerHTML = data.habits.map(h => {
+    const streak = getStreak(h.id);
+    const best = getBestStreak(h.id);
+    const achieved = monthAchieved(h.id, today.getFullYear(), today.getMonth());
+    return `<div class="streak-row">
+      <div class="streak-dot" style="background:\${h.color}"></div>
+      <div class="streak-info">
+        <div class="streak-name">\${h.name}</div>
+        <div class="streak-sub">本月達成 \${achieved} 天 · 最長 \${best} 天</div>
+      </div>
+      <div>
+        <div class="streak-val" style="color:\${h.color}">\${streak}</div>
+        <div class="streak-unit">連續天</div>
+      </div>
+    </div>`;
   }).join('');
 }
 
-function renderManage(){
-  const list=document.getElementById('manage-list'),empty=document.getElementById('empty-manage');
-  if(!data.habits.length){list.style.display='none';empty.style.display='block';return;}
-  list.style.display='block';empty.style.display='none';
-  list.innerHTML=data.habits.map(h=>`<div class="manage-row" onclick="openEditModal('${h.id}')"><div class="manage-color" style="background:${h.color}"></div><div class="manage-info"><div class="manage-name">${h.name}</div><div class="manage-goal">每月目標：${h.goal||20} 天</div></div><div class="manage-arrow">›</div></div>`).join('');
+// ─── Render: Manage ──────────────────────────────────────────
+function renderManage() {
+  const list = document.getElementById('manage-list');
+  const empty = document.getElementById('empty-manage');
+  if (!data.habits.length) {
+    list.style.display = 'none'; empty.style.display = 'block'; return;
+  }
+  list.style.display = 'block'; empty.style.display = 'none';
+  list.innerHTML = data.habits.map(h => `
+    <div class="manage-row" onclick="openEditModal('\${h.id}')">
+      <div class="manage-color" style="background:\${h.color}"></div>
+      <div class="manage-info">
+        <div class="manage-name">\${h.name}</div>
+        <div class="manage-goal">每月目標：\${h.goal || 20} 天</div>
+      </div>
+      <div class="manage-arrow">›</div>
+    </div>`).join('');
 }
 
-function switchTab(name){
-  document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
-  document.querySelectorAll('.tab-item').forEach(t=>t.classList.remove('active'));
+// ─── Tab switching ───────────────────────────────────────────
+function switchTab(name) {
+  document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+  document.querySelectorAll('.tab-item').forEach(t => t.classList.remove('active'));
   document.getElementById('view-'+name).classList.add('active');
   document.getElementById('tab-'+name).classList.add('active');
-  if(name==='grid')renderGrid();else if(name==='stats')renderStats();else renderManage();
+  if (name === 'grid') renderGrid();
+  else if (name === 'stats') renderStats();
+  else if (name === 'manage') renderManage();
 }
 
-function openModal(id){document.getElementById(id).classList.add('open');}
-function closeModal(id){document.getElementById(id).classList.remove('open');}
-function closeModalOnBg(e,id){if(e.target.id===id)closeModal(id);}
+// ─── Modal ───────────────────────────────────────────────────
+function openModal(id) { document.getElementById(id).classList.add('open'); }
+function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+function closeModalOnBg(e, id) { if (e.target.id === id) closeModal(id); }
 
-function buildColorPicker(){
-  document.getElementById('color-picker').innerHTML=COLORS.map(c=>`<div class="color-option${c===selectedColor?' selected':''}" style="background:${c}" onclick="pickColor('${c}')"></div>`).join('');
+function buildColorPicker() {
+  document.getElementById('color-picker').innerHTML = COLORS.map(c =>
+    `<div class="color-option\${c === selectedColor ? ' selected' : ''}"
+          style="background:\${c}" onclick="pickColor('\${c}')"></div>`
+  ).join('');
 }
-function pickColor(c){selectedColor=c;document.querySelectorAll('.color-option').forEach(el=>{el.className='color-option'+(el.style.background===c?' selected':'');});}
 
-function openAddModal(){
-  editingId=null;selectedColor=COLORS[data.habits.length%COLORS.length];
-  document.getElementById('modal-title').textContent='新增習慣';
-  document.getElementById('habit-name-input').value='';
-  document.getElementById('habit-goal-input').value='20';
+function pickColor(c) {
+  selectedColor = c;
+  document.querySelectorAll('.color-option').forEach(el => {
+    el.className = 'color-option' + (el.style.background === c ? ' selected' : '');
+  });
+}
+
+function openAddModal() {
+  editingId = null;
+  selectedColor = COLORS[data.habits.length % COLORS.length];
+  document.getElementById('modal-title').textContent = '新增習慣';
+  document.getElementById('habit-name-input').value = '';
+  document.getElementById('habit-goal-input').value = '20';
   document.getElementById('habit-name-input').classList.remove('error');
-  document.getElementById('delete-btn-row').style.display='none';
-  buildColorPicker();openModal('habit-modal');
-  setTimeout(()=>document.getElementById('habit-name-input').focus(),350);
+  document.getElementById('delete-btn-row').style.display = 'none';
+  buildColorPicker();
+  openModal('habit-modal');
+  setTimeout(() => document.getElementById('habit-name-input').focus(), 350);
 }
 
-function openEditModal(id){
-  const h=data.habits.find(x=>x.id===id);if(!h)return;
-  editingId=id;selectedColor=h.color;
-  document.getElementById('modal-title').textContent='編輯習慣';
-  document.getElementById('habit-name-input').value=h.name;
-  document.getElementById('habit-goal-input').value=h.goal||20;
+function openEditModal(id) {
+  const h = data.habits.find(x => x.id === id); if (!h) return;
+  editingId = id;
+  selectedColor = h.color;
+  document.getElementById('modal-title').textContent = '編輯習慣';
+  document.getElementById('habit-name-input').value = h.name;
+  document.getElementById('habit-goal-input').value = h.goal || 20;
   document.getElementById('habit-name-input').classList.remove('error');
-  document.getElementById('delete-btn-row').style.display='flex';
-  buildColorPicker();openModal('habit-modal');
+  document.getElementById('delete-btn-row').style.display = 'flex';
+  buildColorPicker();
+  openModal('habit-modal');
 }
 
-function saveHabit(){
-  const name=document.getElementById('habit-name-input').value.trim();
-  if(!name){document.getElementById('habit-name-input').classList.add('error');document.getElementById('habit-name-input').focus();return;}
+function saveHabit() {
+  const name = document.getElementById('habit-name-input').value.trim();
+  if (!name) { document.getElementById('habit-name-input').classList.add('error'); document.getElementById('habit-name-input').focus(); return; }
   document.getElementById('habit-name-input').classList.remove('error');
-  const goal=parseInt(document.getElementById('habit-goal-input').value)||20;
-  if(editingId){const idx=data.habits.findIndex(h=>h.id===editingId);if(idx>=0)data.habits[idx]={...data.habits[idx],name,color:selectedColor,goal};}
-  else data.habits.push({id:uid(),name,color:selectedColor,goal});
-  save();closeModal('habit-modal');renderGrid();renderManage();
+  const goal = parseInt(document.getElementById('habit-goal-input').value) || 20;
+
+  if (editingId) {
+    const idx = data.habits.findIndex(h => h.id === editingId);
+    if (idx >= 0) data.habits[idx] = { ...data.habits[idx], name, color: selectedColor, goal };
+  } else {
+    data.habits.push({ id: uid(), name, color: selectedColor, goal });
+  }
+  save();
+  closeModal('habit-modal');
+  renderGrid();
+  renderManage();
 }
 
-function deleteHabit(){
-  if(!editingId)return;
-  data.habits=data.habits.filter(h=>h.id!==editingId);
-  Object.keys(data.records).forEach(k=>{if(data.records[k]){delete data.records[k][editingId];if(!Object.keys(data.records[k]).length)delete data.records[k];}});
-  save();closeModal('habit-modal');renderGrid();renderManage();
+function deleteHabit() {
+  if (!editingId) return;
+  data.habits = data.habits.filter(h => h.id !== editingId);
+  Object.keys(data.records).forEach(key => { if (data.records[key]) delete data.records[key][editingId]; if (data.records[key] && !Object.keys(data.records[key]).length) delete data.records[key]; });
+  save();
+  closeModal('habit-modal');
+  renderGrid();
+  renderManage();
 }
 
+// ─── Boot ────────────────────────────────────────────────────
 load();
-const _n=new Date();viewYear=_n.getFullYear();viewMonth=_n.getMonth();
+const _now = new Date();
+viewYear = _now.getFullYear();
+viewMonth = _now.getMonth();
 renderGrid();
 </script>
 </body>
