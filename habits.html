@@ -16,7 +16,7 @@
       --text-primary: #1c1c1e;
       --text-secondary: #8e8e93;
       --text-tertiary: #c7c7cc;
-      --accent: #4a6cf7;
+      --accent: #267242;
       --border: #e8e8ed;
       --tab-height: 68px;
       --name-col: 110px;
@@ -92,7 +92,7 @@
       gap: 1px;
     }
     .day-dow { font-size: 9px; font-weight: 600; color: var(--text-secondary); text-transform: uppercase; }
-    .day-dow.weekend { color: #ff6b6b; }
+    .day-dow.weekend { color: #C84C16; }
     .day-num {
       font-size: 12px; font-weight: 700;
       width: 22px; height: 22px;
@@ -191,8 +191,8 @@
       font-size: 12px; font-weight: 800;
       text-align: center;
     }
-    .achieved-green { background: #34c759; color: white; }
-    .achieved-yellow { background: #ffd60a; color: #1c1c1e; }
+    .achieved-green { background: #69BF29; color: white; }
+    .achieved-yellow { background: #F9B403; color: #1c1c1e; }
     .achieved-gray { background: #e5e5ea; color: var(--text-secondary); }
 
     .add-habit-row {
@@ -271,7 +271,7 @@
     .manage-goal { font-size: 12px; color: var(--text-secondary); margin-top: 2px; }
     .manage-arrow { color: var(--text-tertiary); font-size: 18px; }
 
-    .add-btn-full { width: 100%; padding: 15px; border-radius: 14px; border: none; background: var(--accent); color: white; font-size: 16px; font-weight: 700; cursor: pointer; font-family: inherit; transition: opacity 0.1s; box-shadow: 0 4px 12px rgba(74,108,247,0.3); }
+    .add-btn-full { width: 100%; padding: 15px; border-radius: 14px; border: none; background: var(--accent); color: white; font-size: 16px; font-weight: 700; cursor: pointer; font-family: inherit; transition: opacity 0.1s; box-shadow: 0 4px 12px rgba(38,114,66,0.3); }
     .add-btn-full:active { opacity: 0.8; }
 
     .tab-bar {
@@ -301,7 +301,7 @@
     .form-label { font-size: 11px; font-weight: 700; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px; }
     .form-input { width: 100%; padding: 13px 14px; border: 1.5px solid var(--border); border-radius: 12px; font-size: 16px; font-family: inherit; background: var(--bg); color: var(--text-primary); outline: none; transition: border-color 0.15s; }
     .form-input:focus { border-color: var(--accent); }
-    .form-input.error { border-color: #ff3b30; }
+    .form-input.error { border-color: #C84C16; }
 
     .color-picker { display: flex; gap: 10px; flex-wrap: wrap; }
     .color-option { width: 32px; height: 32px; border-radius: 16px; border: 3px solid transparent; cursor: pointer; transition: transform 0.15s; }
@@ -312,7 +312,7 @@
     .btn:active { opacity: 0.75; }
     .btn-primary { background: var(--accent); color: white; }
     .btn-secondary { background: var(--bg); color: var(--text-primary); }
-    .btn-danger { background: #fff0f0; color: #ff3b30; }
+    .btn-danger { background: #fff0f0; color: #C84C16; }
 
     @keyframes fadeUp { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
     .fade-up { animation: fadeUp 0.25s ease; }
@@ -366,7 +366,7 @@
   <div class="manage-scroll">
     <div class="manage-list-card" id="manage-list"></div>
     <div id="empty-manage" style="display:none;text-align:center;padding:32px 0;color:var(--text-secondary)">
-      <div style="font-size:40px;margin-bottom:10px">🎯</div>
+      <div style="font-size:40px;margin-bottom:10px">🌿</div>
       <div style="font-weight:600;margin-bottom:4px">尚無習慣</div>
       <div style="font-size:13px;color:var(--text-tertiary)">點下方按鈕新增</div>
     </div>
@@ -408,7 +408,7 @@
 </div>
 
 <script>
-const COLORS=['#4a6cf7','#34c759','#ff9500','#ff6b6b','#af52de','#00c7be','#f7b731','#5ac8fa','#e05c8a','#8bc34a'];
+const COLORS=['#267242','#69BF29','#A6BE42','#DAC561','#D9D5C4','#F9B403','#E9A103','#C84C16','#E7980A','#F8D0C0'];
 const DOW=['日','一','二','三','四','五','六'];
 let data,viewYear,viewMonth,editingId=null,selectedColor=COLORS[0];
 
@@ -462,9 +462,9 @@ function load(){
     if(v1){const o=JSON.parse(v1);data={habits:o.habits.map(h=>({id:h.id,name:h.name,color:h.color||COLORS[0],goal:20})),records:o.records||{}};return;}
   }catch(e){}
   data={habits:[
-    {id:uid(),name:'喝水 2L',color:'#4a6cf7',goal:20},
-    {id:uid(),name:'閱讀 30 分鐘',color:'#34c759',goal:20},
-    {id:uid(),name:'運動',color:'#ff9500',goal:20},
+    {id:uid(),name:'喝水 2L',color:'#267242',goal:20},
+    {id:uid(),name:'閱讀 30 分鐘',color:'#69BF29',goal:20},
+    {id:uid(),name:'運動',color:'#F9B403',goal:20},
   ],records:{}};
 }
 
