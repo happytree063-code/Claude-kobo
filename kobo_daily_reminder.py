@@ -17,6 +17,7 @@ from bs4 import BeautifulSoup
 
 KOBO_HOME_URL = "https://www.kobo.com/tw/zh"
 KOBO_FEATURED_API = "https://www.kobo.com/api/kobo-ui/storeapi/v2/products/list/featured"
+JOANNE_URL = "https://joanneinhk.com/kobo-99/"
 LINE_PUSH_URL = "https://api.line.me/v2/bot/message/push"
 
 _API_HEADERS = {
@@ -113,6 +114,84 @@ def _extract_books_from_featured_list(data: dict) -> list[dict]:
             if b:
                 books.append(b)
     return books, list_name
+
+
+# ---------------------------------------------------------------------------
+# joanneinhk.com scraper (simplest approach)
+# ---------------------------------------------------------------------------
+
+def _get_kobo_via_joanne() -> dict | None:
+    """Scrape joanneinhk.com/kobo-99/ — a blog that tracks Kobo Taiwan daily deals."""
+    try:
+        resp = requests.get(
+            JOANNE_URL,
+            headers={
+                "User-Agent": (
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                    "AppleWebKit/537.36 (KHTML, like Gecko) "
+                    "Chrome/124.0.0.0 Safari/537.36"
+                ),
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                "Accept-Language": "zh-TW,zh;q=0.9",
+                "Referer": "https://www.google.com/",
+            },
+            timeout=20,
+        )
+        print(f"[JOANNE] status={resp.status_code}")
+        if resp.status_code != 200:
+            return None
+
+        soup = BeautifulSoup(resp.text, "html.parser")
+        print(f"[JOANNE] page title: {soup.title.string if soup.title else '?'}")
+        print(f"[JOANNE] HTML length: {len(resp.text)}")
+
+        # Try to find the most recent book entry
+        # Common patterns for WordPress / blog sites
+        for selector in (
+            "article", ".post", ".entry", ".book-entry",
+            "table tr", ".elementor-widget-container",
+        ):
+            items = soup.select(selector)
+            if not items:
+                continue
+            print(f"[JOANNE] selector '{selector}' → {len(items)} elements")
+
+            for item in items[:3]:
+                text = item.get_text(" ", strip=True)
+                # Look for a Kobo link
+                link = item.select_one("a[href*='kobo.com']")
+                # Heuristic: look for price 99 in text
+                if "99" not in text and not link:
+                    continue
+                # Try to find title (first heading or strong text)
+                title_el = item.select_one("h1, h2, h3, h4, strong, b")
+                title = title_el.get_text(strip=True) if title_el else None
+                if not title:
+                    continue
+                # Author might be in a second line or paragraph
+                author_el = item.select_one("p, td")
+                author = None
+                if author_el:
+                    lines = [l.strip() for l in author_el.get_text("\n").split("\n") if l.strip()]
+                    if len(lines) >= 2:
+                        author = lines[1]
+                book_url = link["href"] if link else KOBO_HOME_URL
+                print(f"[JOANNE] Found: title='{title}' author='{author}' url='{book_url}'")
+                return {
+                    "title": title,
+                    "author": author or "未知作者",
+                    "price": "NT$99",
+                    "url": book_url,
+                }
+
+        # Show a snippet of the actual HTML to help debug selectors
+        body = soup.find("body")
+        snippet = body.get_text(" ", strip=True)[:500] if body else ""
+        print(f"[JOANNE] body text snippet:\n{snippet}")
+
+    except Exception as e:
+        print(f"[JOANNE] error: {e}")
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -228,7 +307,12 @@ def _get_kobo_via_playwright() -> dict | None:
 # ---------------------------------------------------------------------------
 
 def get_kobo_daily_deal() -> dict | None:
-    # Try direct API first (faster, no browser overhead)
+    # Try simplest approach first: third-party blog
+    book = _get_kobo_via_joanne()
+    if book and book.get("title"):
+        return book
+
+    # Try Kobo's internal API directly
     book = _get_kobo_via_direct_api()
     if book and book.get("title"):
         return book
