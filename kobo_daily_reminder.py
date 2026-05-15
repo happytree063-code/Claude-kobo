@@ -143,8 +143,13 @@ def _get_kobo_via_playwright() -> dict | None:
         )
         page = ctx.new_page()
         try:
-            page.goto(KOBO_DAILY_DEAL_URL, timeout=30000)
-            page.wait_for_load_state("networkidle", timeout=20000)
+            page.goto(KOBO_DAILY_DEAL_URL, wait_until="domcontentloaded", timeout=30000)
+            # Wait for book content element, not networkidle (which hangs on Kobo)
+            try:
+                page.wait_for_selector("h1, [class*='BookCard'], [class*='book'], main", timeout=10000)
+            except PWTimeout:
+                print("[DEBUG] Element selector timed out, continuing anyway")
+            page.wait_for_timeout(3000)  # Buffer for JS rendering
 
             print(f"[DEBUG] Page title: {page.title()}")
             print(f"[DEBUG] Final URL: {page.url}")
