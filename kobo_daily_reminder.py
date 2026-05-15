@@ -15,7 +15,14 @@ import requests
 from bs4 import BeautifulSoup
 
 
-KOBO_DAILY_DEAL_URL = "https://www.kobo.com/tw/zh/p/daily-deal"
+KOBO_DAILY_DEAL_URLS = [
+    "https://www.kobo.com/tw/zh/p/daily-deal",
+    "https://www.kobo.com/tw/zh/list/book-of-the-day",
+    "https://www.kobo.com/tw/zh/list/daily-deal",
+    "https://www.kobo.com/tw/zh/search?query=&f=Price%3A99&f=Language%3AZh&sort=NewlyAdded",
+    "https://www.kobo.com/tw/zh",
+]
+KOBO_DAILY_DEAL_URL = KOBO_DAILY_DEAL_URLS[0]
 LINE_PUSH_URL = "https://api.line.me/v2/bot/message/push"
 
 
@@ -123,8 +130,28 @@ def _try_html(soup: BeautifulSoup, page_url: str) -> dict | None:
     return None
 
 
+def _try_extract_from_page(page, url: str):
+    """Try all extraction methods on the current Playwright page."""
+    from playwright.sync_api import TimeoutError as PWTimeout
+    html = page.content()
+    title = page.title()
+    print(f"[DEBUG] Title: '{title}'  URL: {page.url}")
+    print(f"[DEBUG] HTML length: {len(html)}")
+    # Show body portion (skip head) to see actual page content
+    body_start = html.find("<body")
+    snippet = html[body_start:body_start + 3000] if body_start >= 0 else html[:3000]
+    print(f"[DEBUG] Body snippet:\n{snippet}")
+
+    if "error" in title.lower() or len(html) < 5000:
+        print("[DEBUG] Page looks like an error page, skipping")
+        return None
+
+    soup = BeautifulSoup(html, "html.parser")
+    return _try_json_ld(soup, url) or _try_html(soup, url)
+
+
 def _get_kobo_via_playwright() -> dict | None:
-    """Use Playwright headless browser to render the JS-heavy Kobo page."""
+    """Try each Kobo URL with Playwright until a book is found."""
     try:
         from playwright.sync_api import sync_playwright, TimeoutError as PWTimeout
     except ImportError:
@@ -143,48 +170,26 @@ def _get_kobo_via_playwright() -> dict | None:
         )
         page = ctx.new_page()
         try:
-            page.goto(KOBO_DAILY_DEAL_URL, wait_until="domcontentloaded", timeout=30000)
-            # Wait for book content element, not networkidle (which hangs on Kobo)
-            try:
-                page.wait_for_selector("h1, [class*='BookCard'], [class*='book'], main", timeout=10000)
-            except PWTimeout:
-                print("[DEBUG] Element selector timed out, continuing anyway")
-            page.wait_for_timeout(3000)  # Buffer for JS rendering
-
-            print(f"[DEBUG] Page title: {page.title()}")
-            print(f"[DEBUG] Final URL: {page.url}")
-
-            # Try __NEXT_DATA__
-            raw = page.evaluate(
-                "() => { const el = document.getElementById('__NEXT_DATA__'); return el ? el.textContent : null; }"
-            )
-            print(f"[DEBUG] __NEXT_DATA__ found: {raw is not None}")
-            if raw:
-                print(f"[DEBUG] __NEXT_DATA__ (first 1000 chars): {raw[:1000]}")
+            for url in KOBO_DAILY_DEAL_URLS:
+                print(f"[DEBUG] Trying URL: {url}")
                 try:
-                    next_data = json.loads(raw)
-                    book = _search_next_data(next_data)
+                    page.goto(url, wait_until="domcontentloaded", timeout=30000)
+                    try:
+                        page.wait_for_selector(".title, h1, [class*='book']", timeout=8000)
+                    except PWTimeout:
+                        pass
+                    page.wait_for_timeout(2000)
+
+                    book = _try_extract_from_page(page, url)
                     if book and book.get("title"):
-                        print(f"Found via __NEXT_DATA__: {book['title']}")
+                        print(f"Found book at {url}: {book['title']}")
                         return book
-                except json.JSONDecodeError:
-                    pass
-
-            # Parse rendered HTML
-            html = page.content()
-            print(f"[DEBUG] HTML length: {len(html)}")
-            print(f"[DEBUG] HTML snippet (first 3000 chars):\n{html[:3000]}")
-            soup = BeautifulSoup(html, "html.parser")
-            book = _try_json_ld(soup, KOBO_DAILY_DEAL_URL) or _try_html(soup, KOBO_DAILY_DEAL_URL)
-            if book:
-                print(f"Found via rendered HTML: {book['title']}")
-            return book
-
-        except PWTimeout:
-            print("Playwright timed out.")
-            return None
-        except Exception as e:
-            print(f"Playwright error: {e}")
+                except PWTimeout:
+                    print(f"[DEBUG] Timed out on {url}")
+                    continue
+                except Exception as e:
+                    print(f"[DEBUG] Error on {url}: {e}")
+                    continue
             return None
         finally:
             browser.close()
