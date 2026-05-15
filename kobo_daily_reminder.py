@@ -9,157 +9,252 @@ import os
 import re
 import sys
 import time
+from datetime import date
 from urllib.parse import quote, urljoin
 
 import requests
 from bs4 import BeautifulSoup
 
 
-KOBO_DAILY_DEAL_URLS = [
-    "https://www.kobo.com/tw/zh/p/daily-deal",
-    "https://www.kobo.com/tw/zh",
-]
+KOBO_HOME_URL = "https://www.kobo.com/tw/zh"
+KOBO_FEATURED_API = "https://www.kobo.com/api/kobo-ui/storeapi/v2/products/list/featured"
+# Public Google Calendar (iCal) maintained by joanneinhk.com — lists daily Kobo 99 books
+KOBO_ICAL_URL = (
+    "https://calendar.google.com/calendar/ical/"
+    "52ddd966361e1aafe52f5ef8c3b19a4d1538e64fdd3ccef1a0acc2bb83bb971d"
+    "%40group.calendar.google.com/public/basic.ics"
+)
 LINE_PUSH_URL = "https://api.line.me/v2/bot/message/push"
 
+_API_HEADERS = {
+    "Accept": "application/json",
+    "Accept-Language": "zh-TW,zh;q=0.9",
+    "Referer": "https://www.kobo.com/tw/zh",
+    "User-Agent": (
+        "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+        "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+    ),
+}
 
-def get_headers():
+
+# ---------------------------------------------------------------------------
+# Source 1: Google Calendar iCal (simplest, most reliable)
+# ---------------------------------------------------------------------------
+
+def _get_kobo_via_calendar() -> list[dict]:
+    """Fetch today's Kobo 99 books from a public Google Calendar iCal feed."""
+    try:
+        resp = requests.get(KOBO_ICAL_URL, headers={"User-Agent": "Mozilla/5.0"}, timeout=20)
+        print(f"[ICAL] status={resp.status_code}  size={len(resp.text)}")
+        if resp.status_code != 200:
+            return []
+
+        today = date.today()
+        books: list[dict] = []
+
+        for raw_event in re.split(r"BEGIN:VEVENT", resp.text)[1:]:
+            end = raw_event.find("END:VEVENT")
+            ev = raw_event[:end] if end >= 0 else raw_event
+
+            # Unfold iCal line continuations (lines starting with space/tab)
+            ev = re.sub(r"\r?\n[ \t]", "", ev)
+
+            # Date
+            m = re.search(r"DTSTART[^:]*:(\d{8})", ev)
+            if not m:
+                continue
+            try:
+                ev_date = date(int(m.group(1)[:4]), int(m.group(1)[4:6]), int(m.group(1)[6:8]))
+            except ValueError:
+                continue
+            if ev_date != today:
+                continue
+
+            # Summary (book title)
+            sm = re.search(r"SUMMARY:(.+?)(?:\r?\n[A-Z]|\Z)", ev, re.DOTALL)
+            title = sm.group(1).strip().replace("\\n", " ").replace("\\,", ",") if sm else ""
+
+            # URL
+            um = re.search(r"URL:(.+?)(?:\r?\n[A-Z]|\Z)", ev, re.DOTALL)
+            url = um.group(1).strip() if um else ""
+            if not url.startswith("http"):
+                url = KOBO_HOME_URL
+
+            print(f"[ICAL] TODAY: '{title[:60]}' → {url[:80]}")
+            if title:
+                books.append({"title": title, "author": "未知作者", "price": "NT$99", "url": url})
+
+        return books
+    except Exception as e:
+        print(f"[ICAL] error: {e}")
+        return []
+
+
+# ---------------------------------------------------------------------------
+# Source 2: Kobo API via Playwright (intercept featured list calls)
+# ---------------------------------------------------------------------------
+
+def _parse_book_item(item: dict) -> dict | None:
+    title = item.get("title") or item.get("Title")
+    if not title:
+        return None
+
+    contribs = (
+        item.get("authors") or item.get("Authors")
+        or item.get("Contributors") or item.get("contributors")
+    )
+    if not contribs:
+        return None
+
+    author = None
+    if isinstance(contribs, list) and contribs:
+        c = contribs[0]
+        author = (c.get("name") or c.get("Name")) if isinstance(c, dict) else str(c)
+
+    # URL — itemPageUrl is the correct field
+    url = None
+    for field in ("itemPageUrl", "Uri", "uri", "Url", "url", "canonicalUrl", "ProductUrl"):
+        val = item.get(field)
+        if val and isinstance(val, str) and len(val) > 3:
+            url = val if val.startswith("http") else f"https://www.kobo.com{val}"
+            break
+    if not url:
+        slug = item.get("slug") or item.get("Slug")
+        if slug:
+            url = f"https://www.kobo.com/tw/zh/ebook/{slug}"
+
+    # Price — field is "pricing" → dict with "ourPrice" → dict with "price"
+    price = None
+    p = item.get("pricing")
+    if isinstance(p, dict):
+        for pk in ("ourPrice", "vipPrice", "salePrice", "regularPrice"):
+            nested = p.get(pk)
+            if isinstance(nested, dict):
+                v = nested.get("price") or nested.get("amount") or nested.get("Amount")
+                if v is not None:
+                    price = f"NT${int(float(v))}"; break
+        if not price:
+            v = p.get("currentPrice") or p.get("price") or p.get("amount")
+            if v is not None:
+                price = f"NT${int(float(v))}"
+    elif isinstance(p, (int, float)):
+        price = f"NT${int(p)}"
+
+    # Rating — field is "rating" → dict with "averageRating" + "numberOfRatings"
+    kobo_rating = None
+    raw = item.get("rating")
+    if isinstance(raw, dict):
+        avg = raw.get("averageRating") or raw.get("Average") or raw.get("average")
+        cnt = raw.get("numberOfRatings") or raw.get("Count") or raw.get("count") or 0
+        if avg and float(avg) > 0:
+            kobo_rating = f"{float(avg):.1f}/5 ({int(cnt):,} 則評分)" if cnt else f"{float(avg):.1f}/5"
+
     return {
-        "User-Agent": (
-            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-            "AppleWebKit/537.36 (KHTML, like Gecko) "
-            "Chrome/124.0.0.0 Safari/537.36"
-        ),
-        "Accept-Language": "zh-TW,zh;q=0.9,en-US;q=0.8,en;q=0.7",
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "title": title,
+        "author": author or "未知作者",
+        "price": price,
+        "url": url or KOBO_HOME_URL,
+        "kobo_rating": kobo_rating,
     }
 
 
-def _parse_next_data_book(data: dict) -> dict:
-    """Extract book fields from a Next.js pageProps or product dict."""
-    title = data.get("title") or data.get("name") or data.get("Title")
-
-    author = None
-    contributors = (
-        data.get("contributors")
-        or data.get("authors")
-        or data.get("Contributors")
-    )
-    if isinstance(contributors, list) and contributors:
-        c = contributors[0]
-        author = c.get("name") or c.get("Name") if isinstance(c, dict) else str(c)
-    elif isinstance(contributors, dict):
-        author = contributors.get("name")
-
-    price = None
-    pricing = data.get("pricing") or data.get("CurrentPrice") or data.get("price")
-    if isinstance(pricing, dict):
-        raw = pricing.get("regularPrice") or pricing.get("listPrice") or pricing.get("price")
-        price = f"NT${raw}" if raw else None
-    elif isinstance(pricing, (int, float)):
-        price = f"NT${int(pricing)}"
-    elif isinstance(pricing, str) and pricing:
-        price = pricing if "$" in pricing else f"NT${pricing}"
-
-    url = data.get("canonicalUrl") or data.get("url") or data.get("ProductUrl")
-    if url and not url.startswith("http"):
-        url = urljoin("https://www.kobo.com", url)
-
-    return {"title": title, "author": author, "price": price or "NT$99", "url": url}
+def _extract_books_from_featured_list(data: dict) -> tuple[list[dict], str]:
+    list_name = data.get("Name") or data.get("name") or data.get("Title") or ""
+    items = data.get("Items") or data.get("items") or data.get("Books") or data.get("books") or []
+    books = [b for item in items if isinstance(item, dict) for b in [_parse_book_item(item)] if b]
+    return books, list_name
 
 
-def _try_next_data(soup: BeautifulSoup) -> dict | None:
-    """Parse book info from Next.js __NEXT_DATA__ embedded JSON."""
-    script = soup.find("script", {"id": "__NEXT_DATA__"})
-    if not script:
-        return None
+def _get_kobo_via_playwright() -> list[dict]:
     try:
-        data = json.loads(script.string or "")
-        page_props = data.get("props", {}).get("pageProps", {})
-        for key in ("book", "product", "featuredBook", "dailyDeal", "promotion"):
-            item = page_props.get(key)
-            if isinstance(item, dict):
-                parsed = _parse_next_data_book(item)
-                if parsed.get("title"):
-                    return parsed
-        for key in ("products", "books", "items"):
-            collection = page_props.get(key)
-            if isinstance(collection, list) and collection:
-                parsed = _parse_next_data_book(collection[0])
-                if parsed.get("title"):
-                    return parsed
-    except (json.JSONDecodeError, AttributeError):
-        pass
-    return None
+        from playwright.sync_api import sync_playwright
+    except ImportError:
+        return []
 
+    spotlight_books: list[dict] = []
+    all_books: list[dict] = []
 
-def _try_json_ld(soup: BeautifulSoup, page_url: str) -> dict | None:
-    """Parse book info from JSON-LD structured data."""
-    for script in soup.find_all("script", type="application/ld+json"):
+    def on_response(resp):
         try:
-            data = json.loads(script.string or "")
-            items = data if isinstance(data, list) else [data]
-            for item in items:
-                if item.get("@type") in ("Book", "Product"):
-                    author_data = item.get("author", {})
-                    if isinstance(author_data, list):
-                        author_data = author_data[0] if author_data else {}
-                    author = author_data.get("name") if isinstance(author_data, dict) else str(author_data)
-                    raw_url = item.get("url", page_url)
-                    url = raw_url if raw_url.startswith("http") else urljoin("https://www.kobo.com", raw_url)
-                    return {"title": item.get("name"), "author": author, "price": "NT$99", "url": url}
-        except (json.JSONDecodeError, AttributeError):
-            continue
-    return None
+            if resp.status != 200 or "json" not in resp.headers.get("content-type", ""):
+                return
+            if "products/list/featured" not in resp.url:
+                return
+            data = resp.json()
+            is_spotlight = "Spotlight" in resp.url
+            books, _ = _extract_books_from_featured_list(data)
+            for b in books:
+                if is_spotlight:
+                    spotlight_books.append(b)
+                all_books.append(b)
+        except Exception:
+            pass
 
-
-def _try_html(soup: BeautifulSoup, page_url: str) -> dict | None:
-    """Fallback: parse book info from HTML element selectors."""
-    selectors = [
-        "[class*='BookCard']",
-        "[class*='book-card']",
-        "[class*='product-item']",
-        "article[class*='book']",
-        ".item-detail",
-    ]
-    for selector in selectors:
-        for item in soup.select(selector):
-            title_el = item.select_one("[class*='title'], h1, h2, h3")
-            author_el = item.select_one("[class*='author'], [class*='contributor']")
-            link_el = item.select_one("a[href*='/ebook/']")
-            title = title_el.get_text(strip=True) if title_el else None
-            if not title:
-                continue
-            author = author_el.get_text(strip=True) if author_el else "未知作者"
-            url = urljoin("https://www.kobo.com", link_el["href"]) if link_el else page_url
-            return {"title": title, "author": author, "price": "NT$99", "url": url}
-    return None
-
-
-def get_kobo_daily_deal() -> dict | None:
-    """Fetch today's Kobo Taiwan daily 99 NT deal book info."""
-    for url in KOBO_DAILY_DEAL_URLS:
+    print("Launching Playwright...")
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=True)
+        ctx = browser.new_context(
+            locale="zh-TW",
+            extra_http_headers={"Accept-Language": "zh-TW,zh;q=0.9"},
+            user_agent=_API_HEADERS["User-Agent"],
+        )
+        page = ctx.new_page()
+        page.on("response", on_response)
         try:
-            resp = requests.get(url, headers=get_headers(), timeout=30)
-            resp.raise_for_status()
-            soup = BeautifulSoup(resp.text, "html.parser")
+            page.goto(KOBO_HOME_URL, wait_until="domcontentloaded", timeout=30000)
+            page.wait_for_timeout(10000)
+        except Exception as e:
+            print(f"Playwright error: {e}")
+        finally:
+            browser.close()
 
-            book = _try_next_data(soup) or _try_json_ld(soup, url) or _try_html(soup, url)
-            if book and book.get("title"):
-                book.setdefault("url", url)
-                return book
-        except requests.RequestException as e:
-            print(f"Request error for {url}: {e}")
-    return None
+    print(f"[PW] spotlight={len(spotlight_books)}  all={len(all_books)}")
+    for b in spotlight_books:
+        print(f"  [SPOT] price={b.get('price')} title={b.get('title','?')[:50]}")
+
+    # Return spotlight books (most likely daily deals), fall back to 99-NT books
+    if spotlight_books:
+        return spotlight_books
+    return [b for b in all_books if b.get("price") == "NT$99"]
+
+
+# ---------------------------------------------------------------------------
+# Main entry point
+# ---------------------------------------------------------------------------
+
+def get_kobo_daily_deal() -> list[dict]:
+    """Return today's Kobo 99 NT deal books. Tries multiple sources."""
+    # 1. Google Calendar (simplest)
+    books = _get_kobo_via_calendar()
+    if books:
+        return books
+
+    # 2. Playwright API intercept
+    print("Calendar failed, trying Playwright...")
+    return _get_kobo_via_playwright()
+
+
+# ---------------------------------------------------------------------------
+# Ratings
+# ---------------------------------------------------------------------------
+
+def _clean_title(title: str) -> str:
+    """Remove parenthetical notes and edition info for better search results."""
+    title = re.sub(r"（[^）]{0,30}）", "", title)
+    title = re.sub(r"\([^)]{0,30}\)", "", title)
+    title = re.sub(r"【[^】]{0,30}】", "", title)
+    return title.strip()
 
 
 def get_goodreads_rating(title: str, author: str | None = None) -> str | None:
-    """Search Goodreads for book rating (scraping)."""
     try:
-        query = f"{title} {author}" if author else title
-        url = f"https://www.goodreads.com/search?q={quote(query)}&search_type=books"
-        resp = requests.get(url, headers=get_headers(), timeout=20)
+        query = f"{_clean_title(title)} {author}" if author and author != "未知作者" else _clean_title(title)
+        resp = requests.get(
+            f"https://www.goodreads.com/search?q={quote(query)}&search_type=books",
+            headers={"User-Agent": "Mozilla/5.0"},
+            timeout=20,
+        )
         soup = BeautifulSoup(resp.text, "html.parser")
-
         for el in soup.select(".minirating"):
             match = re.search(r"(\d+\.\d+)", el.get_text())
             if match:
@@ -172,13 +267,16 @@ def get_goodreads_rating(title: str, author: str | None = None) -> str | None:
 
 
 def get_google_books_rating(title: str, author: str | None = None) -> str | None:
-    """Get rating from Google Books API (free, no auth needed)."""
     try:
-        query = f"intitle:{title}"
-        if author:
-            query += f"+inauthor:{author}"
-        url = f"https://www.googleapis.com/books/v1/volumes?q={quote(query)}&maxResults=5"
-        resp = requests.get(url, timeout=20)
+        q = f"intitle:{_clean_title(title)}"
+        if author and author != "未知作者":
+            # Strip country prefix like [美] [日]
+            clean_author = re.sub(r"^\[[^\]]+\]", "", author).strip()
+            q += f"+inauthor:{clean_author}"
+        resp = requests.get(
+            f"https://www.googleapis.com/books/v1/volumes?q={quote(q)}&maxResults=5",
+            timeout=20,
+        )
         for item in resp.json().get("items", []):
             vi = item.get("volumeInfo", {})
             rating = vi.get("averageRating")
@@ -190,53 +288,69 @@ def get_google_books_rating(title: str, author: str | None = None) -> str | None
     return None
 
 
-def get_open_library_rating(title: str, author: str | None = None) -> str | None:
-    """Get rating from Open Library (Internet Archive)."""
+def get_books_com_tw_rating(title: str) -> str | None:
+    """Search 博客來 for book rating."""
     try:
-        params: dict = {"title": title, "limit": 5}
-        if author:
-            params["author"] = author
-        resp = requests.get("https://openlibrary.org/search.json", params=params, timeout=20)
-        for doc in resp.json().get("docs", []):
-            avg = doc.get("ratings_average")
-            count = doc.get("ratings_count", 0)
-            if avg and count > 0:
-                return f"{avg:.2f}/5 ({count:,} 則評分)"
+        search_url = f"https://search.books.com.tw/search/query/key/{quote(_clean_title(title))}/cat/BKM"
+        resp = requests.get(
+            search_url,
+            headers={
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+                "Accept-Language": "zh-TW,zh;q=0.9",
+                "Referer": "https://www.books.com.tw/",
+            },
+            timeout=15,
+        )
+        soup = BeautifulSoup(resp.text, "html.parser")
+        for item in soup.select(".item"):
+            rating_el = item.select_one("[class*='star']")
+            if rating_el:
+                style = rating_el.get("style", "")
+                m = re.search(r"width:\s*(\d+(?:\.\d+)?)%", style)
+                if m:
+                    pct = float(m.group(1))
+                    stars = round(pct / 20, 1)
+                    return f"{stars}/5"
     except Exception as e:
-        print(f"Open Library error: {e}")
+        print(f"博客來 error: {e}")
     return None
 
 
-def build_message(book: dict, ratings: dict[str, str | None]) -> str:
-    title = book.get("title", "未知書名")
-    author = book.get("author", "未知作者")
-    price = book.get("price", "NT$99")
-    url = book.get("url", "https://www.kobo.com/tw/zh/p/daily-deal")
+# ---------------------------------------------------------------------------
+# Message builder
+# ---------------------------------------------------------------------------
 
-    lines = [
-        "📚 今日 Kobo 每日 99 元好書",
-        "─────────────────",
-        f"📖 書名：{title}",
-        f"✍️  作者：{author}",
-        f"💰 價格：{price}",
-        "",
-        "⭐ 各平台評分",
-    ]
+NUMBER_ICONS = ["①", "②", "③", "④", "⑤"]
 
-    has_rating = any(v for v in ratings.values())
-    if has_rating:
-        for platform, rating in ratings.items():
-            if rating:
-                lines.append(f"• {platform}：{rating}")
-    else:
-        lines.append("（暫無評分資料）")
 
-    lines += ["", f"🔗 {url}"]
+def build_message(books: list[dict], ratings_list: list[dict[str, str | None]]) -> str:
+    lines = ["📚 今日 Kobo 每日 99 元好書", "─────────────────"]
+
+    for i, (book, ratings) in enumerate(zip(books, ratings_list)):
+        if len(books) > 1:
+            lines.append(f"\n{NUMBER_ICONS[i] if i < len(NUMBER_ICONS) else str(i+1)} {book.get('title', '未知書名')}")
+        else:
+            lines.append(f"📖 書名：{book.get('title', '未知書名')}")
+
+        lines.append(f"✍️  作者：{book.get('author', '未知作者')}")
+        lines.append(f"💰 價格：{book.get('price') or 'NT$99'}")
+
+        rated = {k: v for k, v in ratings.items() if v}
+        if rated:
+            lines.append("⭐ 評分：" + " | ".join(f"{p} {r}" for p, r in rated.items()))
+        else:
+            lines.append("⭐ 評分：（暫無資料）")
+
+        lines.append(f"🔗 {book.get('url', KOBO_HOME_URL)}")
+
     return "\n".join(lines)
 
 
+# ---------------------------------------------------------------------------
+# LINE
+# ---------------------------------------------------------------------------
+
 def send_line_message(user_id: str, message: str, token: str) -> None:
-    """Send push message via LINE Messaging API."""
     resp = requests.post(
         LINE_PUSH_URL,
         headers={"Content-Type": "application/json", "Authorization": f"Bearer {token}"},
@@ -250,37 +364,49 @@ def send_line_message(user_id: str, message: str, token: str) -> None:
         sys.exit(1)
 
 
+# ---------------------------------------------------------------------------
+# Entry point
+# ---------------------------------------------------------------------------
+
 def main():
     token = os.environ.get("LINE_CHANNEL_ACCESS_TOKEN")
     user_id = os.environ.get("LINE_USER_ID")
-
     if not token or not user_id:
         print("ERROR: LINE_CHANNEL_ACCESS_TOKEN and LINE_USER_ID must be set.")
         sys.exit(1)
 
     print("Fetching Kobo daily deal...")
-    book = get_kobo_daily_deal()
+    books = get_kobo_daily_deal()
 
-    if not book:
+    if not books:
         send_line_message(
             user_id,
-            "⚠️ 無法自動取得今日 Kobo 每日特惠書籍\n請手動查看：\nhttps://www.kobo.com/tw/zh/p/daily-deal",
+            "⚠️ 無法自動取得今日 Kobo 每日特惠書籍\n請手動查看：\nhttps://www.kobo.com/tw/zh",
             token,
         )
         return
 
-    print(f"Book: {book['title']} by {book.get('author', '?')}")
-    print("Fetching ratings...")
+    print(f"Found {len(books)} book(s)")
+    ratings_list: list[dict[str, str | None]] = []
 
-    ratings: dict[str, str | None] = {}
-    ratings["Goodreads"] = get_goodreads_rating(book["title"], book.get("author"))
-    time.sleep(1)
-    ratings["Google Books"] = get_google_books_rating(book["title"], book.get("author"))
-    time.sleep(1)
-    ratings["Open Library"] = get_open_library_rating(book["title"], book.get("author"))
+    for book in books:
+        title = book["title"]
+        author = book.get("author")
+        print(f"  → {title}")
 
-    print(f"Ratings: {ratings}")
-    message = build_message(book, ratings)
+        ratings: dict[str, str | None] = {}
+        if book.get("kobo_rating"):
+            ratings["Kobo"] = book["kobo_rating"]
+        ratings["博客來"] = get_books_com_tw_rating(title)
+        time.sleep(0.5)
+        ratings["Goodreads"] = get_goodreads_rating(title, author)
+        time.sleep(0.5)
+        ratings["Google Books"] = get_google_books_rating(title, author)
+
+        print(f"     ratings: {ratings}")
+        ratings_list.append(ratings)
+
+    message = build_message(books, ratings_list)
     print(f"Sending:\n{message}")
     send_line_message(user_id, message, token)
 
