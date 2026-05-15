@@ -254,7 +254,9 @@ def get_kobo_daily_deal() -> list[dict]:
         )
         if match:
             print(f"  [ENRICH] '{ical['title'][:40]}' ← URL+author from Playwright")
-            result.append(match)
+            enriched = dict(match)
+            enriched["price"] = "NT$99"  # iCal-confirmed deal price
+            result.append(enriched)
         else:
             print(f"  [ICAL_ONLY] '{ical['title'][:40]}' — no Playwright match")
             result.append(ical)
@@ -267,22 +269,52 @@ def get_kobo_daily_deal() -> list[dict]:
 # ---------------------------------------------------------------------------
 
 def _clean_title(title: str) -> str:
-    """Remove parenthetical notes and edition info for better search results."""
+    """Simplify title for search: strip edition notes, annotations, and subtitles."""
     title = re.sub(r"（[^）]{0,30}）", "", title)
     title = re.sub(r"\([^)]{0,30}\)", "", title)
     title = re.sub(r"【[^】]{0,30}】", "", title)
+    # Keep only the main title before ：or : (subtitle separator)
+    title = re.split(r"[：:]", title)[0]
     return title.strip()
+
+
+def _extract_english_author(author: str) -> str | None:
+    """Extract English name from bilingual Kobo author strings.
+
+    Handles:
+      '[美]悉尼·霍默（Sidney Homer）、理查德·西拉（Richard Sylla）' → 'Sidney Homer'
+      '珍妮佛‧高曼－威茲勒博士 Jennifer Goldman-Wetzler'           → 'Jennifer Goldman-Wetzler'
+    """
+    if not author or author == "未知作者":
+        return None
+    # English name in full-width parentheses: （Sidney Homer）
+    m = re.search(r"[（(]([A-Za-z][A-Za-z\s\-\.]+)[）)]", author)
+    if m and len(m.group(1).strip()) > 3:
+        return m.group(1).strip()
+    # English name inline (two or more capitalized words)
+    m = re.search(r"\b([A-Z][a-z]+(?:[\s\-][A-Z][a-z]+)+)\b", author)
+    if m:
+        return m.group(1).strip()
+    return None
 
 
 def get_goodreads_rating(title: str, author: str | None = None) -> str | None:
     try:
-        query = f"{_clean_title(title)} {author}" if author and author != "未知作者" else _clean_title(title)
+        en_author = _extract_english_author(author) if author else None
+        clean = _clean_title(title)
+        # Use English author name when available — Goodreads coverage is mostly English
+        query = f"{en_author} {clean}" if en_author else clean
         resp = requests.get(
             f"https://www.goodreads.com/search?q={quote(query)}&search_type=books",
-            headers={"User-Agent": "Mozilla/5.0"},
+            headers={
+                "User-Agent": (
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                    "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+                )
+            },
             timeout=20,
         )
-        print(f"[Goodreads] status={resp.status_code}  query={query[:40]}")
+        print(f"[Goodreads] status={resp.status_code}  query={query[:60]}")
         soup = BeautifulSoup(resp.text, "html.parser")
         ratings_els = soup.select(".minirating")
         print(f"[Goodreads] found {len(ratings_els)} .minirating elements")
@@ -299,21 +331,27 @@ def get_goodreads_rating(title: str, author: str | None = None) -> str | None:
 
 def get_google_books_rating(title: str, author: str | None = None) -> str | None:
     try:
-        q = f"intitle:{_clean_title(title)}"
-        if author and author != "未知作者":
-            clean_author = re.sub(r"^\[[^\]]+\]", "", author).strip()
-            q += f"+inauthor:{clean_author}"
+        clean = _clean_title(title)
+        en_author = _extract_english_author(author) if author else None
+        # English author query finds far more results than Chinese
+        if en_author:
+            q = f"inauthor:{en_author} {clean}"
+        else:
+            q = f"intitle:{clean}"
+            if author and author != "未知作者":
+                stripped = re.sub(r"^\[[^\]]+\]", "", author).strip()
+                q += f"+inauthor:{stripped}"
         resp = requests.get(
             f"https://www.googleapis.com/books/v1/volumes?q={quote(q)}&maxResults=5",
             timeout=20,
         )
         items = resp.json().get("items", [])
-        print(f"[Google Books] query={q[:50]}  results={len(items)}")
+        print(f"[Google Books] query={q[:60]}  results={len(items)}")
         for item in items:
             vi = item.get("volumeInfo", {})
             rating = vi.get("averageRating")
             count = vi.get("ratingsCount", 0)
-            print(f"[Google Books]   title={vi.get('title','?')[:40]}  rating={rating}  count={count}")
+            print(f"[Google Books]   '{vi.get('title','?')[:40]}'  rating={rating}")
             if rating:
                 return f"{rating}/5 ({count:,} 則評分)"
     except Exception as e:
@@ -324,32 +362,42 @@ def get_google_books_rating(title: str, author: str | None = None) -> str | None
 def get_books_com_tw_rating(title: str) -> str | None:
     """Search 博客來 for book rating."""
     try:
-        search_url = f"https://search.books.com.tw/search/query/key/{quote(_clean_title(title))}/cat/BKM"
+        clean = _clean_title(title)
+        search_url = f"https://search.books.com.tw/search/query/key/{quote(clean)}/cat/BKM"
         resp = requests.get(
             search_url,
             headers={
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+                "User-Agent": (
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                    "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+                ),
                 "Accept-Language": "zh-TW,zh;q=0.9",
                 "Referer": "https://www.books.com.tw/",
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
             },
             timeout=15,
         )
         soup = BeautifulSoup(resp.text, "html.parser")
-        items = soup.select(".item")
-        print(f"[博客來] status={resp.status_code}  items={len(items)}  title={_clean_title(title)[:30]}")
+        # Try multiple selectors — 博客來 HTML structure varies
+        items = (
+            soup.select("li.item")
+            or soup.select(".item")
+            or soup.select(".searchbook li")
+            or soup.select("ul.searchbook > li")
+        )
+        print(f"[博客來] status={resp.status_code}  items={len(items)}  q={clean[:20]}")
+        if not items:
+            # Print a short HTML snippet for diagnosis
+            print(f"[博客來] HTML[0:300]: {resp.text[:300]!r}")
         for item in items:
-            rating_el = item.select_one("[class*='star']")
-            if rating_el:
-                style = rating_el.get("style", "")
-                m = re.search(r"width:\s*(\d+(?:\.\d+)?)%", style)
-                if m:
-                    pct = float(m.group(1))
-                    stars = round(pct / 20, 1)
-                    return f"{stars}/5"
-        # Log first item for debugging if no rating found
-        if items:
-            first_title_el = items[0].select_one("h3, .name")
-            print(f"[博客來] first result: {first_title_el.get_text(strip=True)[:50] if first_title_el else 'n/a'}")
+            for star_sel in ("[class*='star']", ".grade span", ".star-rate", "span[style*='width']"):
+                rating_el = item.select_one(star_sel)
+                if rating_el:
+                    style = rating_el.get("style", "")
+                    m = re.search(r"width:\s*(\d+(?:\.\d+)?)%", style)
+                    if m:
+                        stars = round(float(m.group(1)) / 20, 1)
+                        return f"{stars}/5"
     except Exception as e:
         print(f"博客來 error: {e}")
     return None
