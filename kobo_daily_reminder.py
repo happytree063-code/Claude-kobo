@@ -333,8 +333,8 @@ def get_google_books_rating(title: str, author: str | None = None) -> str | None
     try:
         clean = _clean_title(title)
         en_author = _extract_english_author(author) if author else None
-        # Use English author only — mixing Chinese title confuses Google Books
-        q = f"inauthor:{en_author}" if en_author else f"intitle:{clean}"
+        # Plain text search (no inauthor: qualifier) matches more results than field-qualified
+        q = en_author if en_author else clean
         resp = requests.get(
             f"https://www.googleapis.com/books/v1/volumes?q={quote(q)}&maxResults=5",
             timeout=20,
@@ -374,6 +374,41 @@ def get_open_library_rating(title: str, author: str | None = None) -> str | None
                 return f"{float(avg):.2f}/5 ({int(count):,} 則評分)"
     except Exception as e:
         print(f"Open Library error: {e}")
+    return None
+
+
+def get_douban_rating(title: str) -> str | None:
+    """Search 豆瓣 for book rating — most comprehensive for Chinese/translated books."""
+    try:
+        clean = _clean_title(title)
+        resp = requests.get(
+            f"https://search.douban.com/book/subject_search?search_text={quote(clean)}&cat=1001",
+            headers={
+                "User-Agent": (
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                    "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+                ),
+                "Accept-Language": "zh-TW,zh;q=0.9,zh-CN;q=0.8",
+                "Referer": "https://book.douban.com/",
+            },
+            timeout=15,
+        )
+        print(f"[豆瓣] status={resp.status_code}  q={clean[:20]}")
+        if resp.status_code != 200:
+            return None
+        soup = BeautifulSoup(resp.text, "html.parser")
+        for sel in (".rating_nums", ".rating_num", "[class*='rating_nums']"):
+            for el in soup.select(sel):
+                text = el.get_text(strip=True)
+                if re.match(r"^\d+\.\d+$", text):
+                    return f"{text}/10"
+        # JSON-LD fallback
+        m = re.search(r'"averageRating"\s*:\s*"?(\d+\.\d+)"?', resp.text)
+        if m:
+            return f"{m.group(1)}/10"
+        print(f"[豆瓣] no rating found in page")
+    except Exception as e:
+        print(f"豆瓣 error: {e}")
     return None
 
 
@@ -506,6 +541,8 @@ def main():
         ratings: dict[str, str | None] = {}
         if book.get("kobo_rating"):
             ratings["Kobo"] = book["kobo_rating"]
+        ratings["豆瓣"] = get_douban_rating(title)
+        time.sleep(0.5)
         ratings["博客來"] = get_books_com_tw_rating(title)
         time.sleep(0.5)
         ratings["Google Books"] = get_google_books_rating(title, author)
