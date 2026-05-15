@@ -223,15 +223,43 @@ def _get_kobo_via_playwright() -> list[dict]:
 # ---------------------------------------------------------------------------
 
 def get_kobo_daily_deal() -> list[dict]:
-    """Return today's Kobo 99 NT deal books. Tries multiple sources."""
-    # 1. Google Calendar (simplest)
-    books = _get_kobo_via_calendar()
-    if books:
-        return books
+    """Return today's Kobo 99 NT deal books.
 
-    # 2. Playwright API intercept
-    print("Calendar failed, trying Playwright...")
-    return _get_kobo_via_playwright()
+    iCal identifies the correct books by title; Playwright provides full
+    metadata (author, specific URL, Kobo rating).  Both run every time and
+    results are merged by title so we always get complete data.
+    """
+    ical_books = _get_kobo_via_calendar()
+    pw_books = _get_kobo_via_playwright()
+
+    if not ical_books and not pw_books:
+        return []
+
+    # Playwright only (iCal failed) — keep NT$99 spotlight books
+    if not ical_books:
+        books_99 = [b for b in pw_books if b.get("price") == "NT$99"]
+        return books_99 or pw_books[:2]
+
+    # iCal only (Playwright failed) — titles correct but no URL/author
+    if not pw_books:
+        return ical_books
+
+    # Both succeeded — enrich iCal books with Playwright metadata
+    result = []
+    for ical in ical_books:
+        key = _clean_title(ical["title"])[:8]
+        match = next(
+            (b for b in pw_books if _clean_title(b.get("title", ""))[:8] == key),
+            None,
+        )
+        if match:
+            print(f"  [ENRICH] '{ical['title'][:40]}' ← URL+author from Playwright")
+            result.append(match)
+        else:
+            print(f"  [ICAL_ONLY] '{ical['title'][:40]}' — no Playwright match")
+            result.append(ical)
+
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -254,8 +282,11 @@ def get_goodreads_rating(title: str, author: str | None = None) -> str | None:
             headers={"User-Agent": "Mozilla/5.0"},
             timeout=20,
         )
+        print(f"[Goodreads] status={resp.status_code}  query={query[:40]}")
         soup = BeautifulSoup(resp.text, "html.parser")
-        for el in soup.select(".minirating"):
+        ratings_els = soup.select(".minirating")
+        print(f"[Goodreads] found {len(ratings_els)} .minirating elements")
+        for el in ratings_els:
             match = re.search(r"(\d+\.\d+)", el.get_text())
             if match:
                 count_match = re.search(r"([\d,]+)\s*rating", el.get_text())
@@ -270,17 +301,19 @@ def get_google_books_rating(title: str, author: str | None = None) -> str | None
     try:
         q = f"intitle:{_clean_title(title)}"
         if author and author != "未知作者":
-            # Strip country prefix like [美] [日]
             clean_author = re.sub(r"^\[[^\]]+\]", "", author).strip()
             q += f"+inauthor:{clean_author}"
         resp = requests.get(
             f"https://www.googleapis.com/books/v1/volumes?q={quote(q)}&maxResults=5",
             timeout=20,
         )
-        for item in resp.json().get("items", []):
+        items = resp.json().get("items", [])
+        print(f"[Google Books] query={q[:50]}  results={len(items)}")
+        for item in items:
             vi = item.get("volumeInfo", {})
             rating = vi.get("averageRating")
             count = vi.get("ratingsCount", 0)
+            print(f"[Google Books]   title={vi.get('title','?')[:40]}  rating={rating}  count={count}")
             if rating:
                 return f"{rating}/5 ({count:,} 則評分)"
     except Exception as e:
@@ -302,7 +335,9 @@ def get_books_com_tw_rating(title: str) -> str | None:
             timeout=15,
         )
         soup = BeautifulSoup(resp.text, "html.parser")
-        for item in soup.select(".item"):
+        items = soup.select(".item")
+        print(f"[博客來] status={resp.status_code}  items={len(items)}  title={_clean_title(title)[:30]}")
+        for item in items:
             rating_el = item.select_one("[class*='star']")
             if rating_el:
                 style = rating_el.get("style", "")
@@ -311,6 +346,10 @@ def get_books_com_tw_rating(title: str) -> str | None:
                     pct = float(m.group(1))
                     stars = round(pct / 20, 1)
                     return f"{stars}/5"
+        # Log first item for debugging if no rating found
+        if items:
+            first_title_el = items[0].select_one("h3, .name")
+            print(f"[博客來] first result: {first_title_el.get_text(strip=True)[:50] if first_title_el else 'n/a'}")
     except Exception as e:
         print(f"博客來 error: {e}")
     return None
