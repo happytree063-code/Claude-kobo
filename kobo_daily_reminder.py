@@ -150,57 +150,29 @@ def _get_kobo_via_joanne() -> dict | None:
             },
             timeout=20,
         )
-        print(f"[JOANNE] status={resp.status_code}")
+        print(f"[JOANNE] status={resp.status_code}  length={len(resp.text)}")
         if resp.status_code != 200:
             return None
 
         soup = BeautifulSoup(resp.text, "html.parser")
-        print(f"[JOANNE] page title: {soup.title.string if soup.title else '?'}")
-        print(f"[JOANNE] HTML length: {len(resp.text)}")
 
-        # Try to find the most recent book entry
-        # Common patterns for WordPress / blog sites
-        for selector in (
-            "article", ".post", ".entry", ".book-entry",
-            "table tr", ".elementor-widget-container",
-        ):
-            items = soup.select(selector)
-            if not items:
-                continue
-            print(f"[JOANNE] selector '{selector}' → {len(items)} elements")
+        # ── Debug: show all Kobo ebook links ──────────────────────────────
+        all_kobo = soup.select("a[href*='kobo.com']")
+        print(f"[JOANNE] {len(all_kobo)} kobo links total")
+        for a in all_kobo[:8]:
+            print(f"  href={a['href'][:100]}  text='{a.get_text(strip=True)[:50]}'")
 
-            for item in items[:3]:
-                text = item.get_text(" ", strip=True)
-                # Look for a Kobo link
-                link = item.select_one("a[href*='kobo.com']")
-                # Heuristic: look for price 99 in text
-                if "99" not in text and not link:
-                    continue
-                # Try to find title (first heading or strong text)
-                title_el = item.select_one("h1, h2, h3, h4, strong, b")
-                title = title_el.get_text(strip=True) if title_el else None
-                if not title:
-                    continue
-                # Author might be in a second line or paragraph
-                author_el = item.select_one("p, td")
-                author = None
-                if author_el:
-                    lines = [l.strip() for l in author_el.get_text("\n").split("\n") if l.strip()]
-                    if len(lines) >= 2:
-                        author = lines[1]
-                book_url = link["href"] if link else KOBO_HOME_URL
-                print(f"[JOANNE] Found: title='{title}' author='{author}' url='{book_url}'")
-                return {
-                    "title": title,
-                    "author": author or "未知作者",
-                    "price": "NT$99",
-                    "url": book_url,
-                }
+        # ── Debug: show main content text ─────────────────────────────────
+        main = soup.select_one(
+            ".entry-content, .post-content, .elementor-widget-container, article, main"
+        )
+        if main:
+            txt = main.get_text("\n", strip=True)
+            print(f"[JOANNE] main content (first 800 chars):\n{txt[:800]}")
 
-        # Show a snippet of the actual HTML to help debug selectors
-        body = soup.find("body")
-        snippet = body.get_text(" ", strip=True)[:500] if body else ""
-        print(f"[JOANNE] body text snippet:\n{snippet}")
+        # ── Debug: show all headings ───────────────────────────────────────
+        for h in soup.select("h2, h3, h4")[:10]:
+            print(f"[JOANNE] heading: '{h.get_text(strip=True)[:80]}'")
 
     except Exception as e:
         print(f"[JOANNE] error: {e}")
