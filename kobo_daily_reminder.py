@@ -15,10 +15,7 @@ import requests
 from bs4 import BeautifulSoup
 
 
-KOBO_DAILY_DEAL_URLS = [
-    "https://www.kobo.com/tw/zh/p/daily-deal",
-    "https://www.kobo.com/tw/zh",
-]
+KOBO_DAILY_DEAL_URL = "https://www.kobo.com/tw/zh/p/daily-deal"
 LINE_PUSH_URL = "https://api.line.me/v2/bot/message/push"
 
 
@@ -67,33 +64,25 @@ def _parse_next_data_book(data: dict) -> dict:
     return {"title": title, "author": author, "price": price or "NT$99", "url": url}
 
 
-def _try_next_data(soup: BeautifulSoup) -> dict | None:
-    """Parse book info from Next.js __NEXT_DATA__ embedded JSON."""
-    script = soup.find("script", {"id": "__NEXT_DATA__"})
-    if not script:
-        return None
-    try:
-        data = json.loads(script.string or "")
-        page_props = data.get("props", {}).get("pageProps", {})
-        for key in ("book", "product", "featuredBook", "dailyDeal", "promotion"):
-            item = page_props.get(key)
-            if isinstance(item, dict):
-                parsed = _parse_next_data_book(item)
-                if parsed.get("title"):
-                    return parsed
-        for key in ("products", "books", "items"):
-            collection = page_props.get(key)
-            if isinstance(collection, list) and collection:
-                parsed = _parse_next_data_book(collection[0])
-                if parsed.get("title"):
-                    return parsed
-    except (json.JSONDecodeError, AttributeError):
-        pass
+def _search_next_data(next_data: dict) -> dict | None:
+    """Walk Next.js pageProps looking for book data."""
+    page_props = next_data.get("props", {}).get("pageProps", {})
+    for key in ("book", "product", "featuredBook", "dailyDeal", "promotion"):
+        item = page_props.get(key)
+        if isinstance(item, dict):
+            parsed = _parse_next_data_book(item)
+            if parsed.get("title"):
+                return parsed
+    for key in ("products", "books", "items"):
+        collection = page_props.get(key)
+        if isinstance(collection, list) and collection:
+            parsed = _parse_next_data_book(collection[0])
+            if parsed.get("title"):
+                return parsed
     return None
 
 
 def _try_json_ld(soup: BeautifulSoup, page_url: str) -> dict | None:
-    """Parse book info from JSON-LD structured data."""
     for script in soup.find_all("script", type="application/ld+json"):
         try:
             data = json.loads(script.string or "")
@@ -113,7 +102,6 @@ def _try_json_ld(soup: BeautifulSoup, page_url: str) -> dict | None:
 
 
 def _try_html(soup: BeautifulSoup, page_url: str) -> dict | None:
-    """Fallback: parse book info from HTML element selectors."""
     selectors = [
         "[class*='BookCard']",
         "[class*='book-card']",
@@ -135,31 +123,101 @@ def _try_html(soup: BeautifulSoup, page_url: str) -> dict | None:
     return None
 
 
+def _get_kobo_via_playwright() -> dict | None:
+    """Use Playwright headless browser to render the JS-heavy Kobo page."""
+    try:
+        from playwright.sync_api import sync_playwright, TimeoutError as PWTimeout
+    except ImportError:
+        print("Playwright not installed, skipping.")
+        return None
+
+    print("Launching Playwright...")
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=True)
+        ctx = browser.new_context(
+            locale="zh-TW",
+            user_agent=(
+                "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+                "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+            ),
+        )
+        page = ctx.new_page()
+        try:
+            page.goto(KOBO_DAILY_DEAL_URL, timeout=30000)
+            # Wait for JS to render book content
+            page.wait_for_load_state("networkidle", timeout=20000)
+
+            # Try __NEXT_DATA__
+            raw = page.evaluate(
+                "() => { const el = document.getElementById('__NEXT_DATA__'); return el ? el.textContent : null; }"
+            )
+            if raw:
+                try:
+                    next_data = json.loads(raw)
+                    book = _search_next_data(next_data)
+                    if book and book.get("title"):
+                        print(f"Found via __NEXT_DATA__: {book['title']}")
+                        return book
+                except json.JSONDecodeError:
+                    pass
+
+            # Parse rendered HTML
+            html = page.content()
+            soup = BeautifulSoup(html, "html.parser")
+            book = _try_json_ld(soup, KOBO_DAILY_DEAL_URL) or _try_html(soup, KOBO_DAILY_DEAL_URL)
+            if book:
+                print(f"Found via rendered HTML: {book['title']}")
+            return book
+
+        except PWTimeout:
+            print("Playwright timed out.")
+            return None
+        except Exception as e:
+            print(f"Playwright error: {e}")
+            return None
+        finally:
+            browser.close()
+
+
+def _get_kobo_via_requests() -> dict | None:
+    """Fallback: fetch Kobo page with requests (works if SSR is enabled)."""
+    try:
+        resp = requests.get(KOBO_DAILY_DEAL_URL, headers=get_headers(), timeout=30)
+        resp.raise_for_status()
+        soup = BeautifulSoup(resp.text, "html.parser")
+
+        # Try embedded Next.js data
+        script = soup.find("script", {"id": "__NEXT_DATA__"})
+        if script:
+            try:
+                next_data = json.loads(script.string or "")
+                book = _search_next_data(next_data)
+                if book and book.get("title"):
+                    return book
+            except json.JSONDecodeError:
+                pass
+
+        return _try_json_ld(soup, KOBO_DAILY_DEAL_URL) or _try_html(soup, KOBO_DAILY_DEAL_URL)
+    except requests.RequestException as e:
+        print(f"Requests error: {e}")
+        return None
+
+
 def get_kobo_daily_deal() -> dict | None:
     """Fetch today's Kobo Taiwan daily 99 NT deal book info."""
-    for url in KOBO_DAILY_DEAL_URLS:
-        try:
-            resp = requests.get(url, headers=get_headers(), timeout=30)
-            resp.raise_for_status()
-            soup = BeautifulSoup(resp.text, "html.parser")
-
-            book = _try_next_data(soup) or _try_json_ld(soup, url) or _try_html(soup, url)
-            if book and book.get("title"):
-                book.setdefault("url", url)
-                return book
-        except requests.RequestException as e:
-            print(f"Request error for {url}: {e}")
-    return None
+    book = _get_kobo_via_playwright()
+    if book and book.get("title"):
+        return book
+    print("Playwright returned no result, trying requests fallback...")
+    return _get_kobo_via_requests()
 
 
 def get_goodreads_rating(title: str, author: str | None = None) -> str | None:
-    """Search Goodreads for book rating (scraping)."""
     try:
         query = f"{title} {author}" if author else title
         url = f"https://www.goodreads.com/search?q={quote(query)}&search_type=books"
         resp = requests.get(url, headers=get_headers(), timeout=20)
         soup = BeautifulSoup(resp.text, "html.parser")
-
         for el in soup.select(".minirating"):
             match = re.search(r"(\d+\.\d+)", el.get_text())
             if match:
@@ -172,7 +230,6 @@ def get_goodreads_rating(title: str, author: str | None = None) -> str | None:
 
 
 def get_google_books_rating(title: str, author: str | None = None) -> str | None:
-    """Get rating from Google Books API (free, no auth needed)."""
     try:
         query = f"intitle:{title}"
         if author:
@@ -191,7 +248,6 @@ def get_google_books_rating(title: str, author: str | None = None) -> str | None
 
 
 def get_open_library_rating(title: str, author: str | None = None) -> str | None:
-    """Get rating from Open Library (Internet Archive)."""
     try:
         params: dict = {"title": title, "limit": 5}
         if author:
@@ -211,7 +267,7 @@ def build_message(book: dict, ratings: dict[str, str | None]) -> str:
     title = book.get("title", "未知書名")
     author = book.get("author", "未知作者")
     price = book.get("price", "NT$99")
-    url = book.get("url", "https://www.kobo.com/tw/zh/p/daily-deal")
+    url = book.get("url", KOBO_DAILY_DEAL_URL)
 
     lines = [
         "📚 今日 Kobo 每日 99 元好書",
@@ -236,7 +292,6 @@ def build_message(book: dict, ratings: dict[str, str | None]) -> str:
 
 
 def send_line_message(user_id: str, message: str, token: str) -> None:
-    """Send push message via LINE Messaging API."""
     resp = requests.post(
         LINE_PUSH_URL,
         headers={"Content-Type": "application/json", "Authorization": f"Bearer {token}"},
