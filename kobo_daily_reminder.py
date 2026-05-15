@@ -144,14 +144,18 @@ def _get_kobo_via_playwright() -> dict | None:
         page = ctx.new_page()
         try:
             page.goto(KOBO_DAILY_DEAL_URL, timeout=30000)
-            # Wait for JS to render book content
             page.wait_for_load_state("networkidle", timeout=20000)
+
+            print(f"[DEBUG] Page title: {page.title()}")
+            print(f"[DEBUG] Final URL: {page.url}")
 
             # Try __NEXT_DATA__
             raw = page.evaluate(
                 "() => { const el = document.getElementById('__NEXT_DATA__'); return el ? el.textContent : null; }"
             )
+            print(f"[DEBUG] __NEXT_DATA__ found: {raw is not None}")
             if raw:
+                print(f"[DEBUG] __NEXT_DATA__ (first 1000 chars): {raw[:1000]}")
                 try:
                     next_data = json.loads(raw)
                     book = _search_next_data(next_data)
@@ -163,6 +167,8 @@ def _get_kobo_via_playwright() -> dict | None:
 
             # Parse rendered HTML
             html = page.content()
+            print(f"[DEBUG] HTML length: {len(html)}")
+            print(f"[DEBUG] HTML snippet (first 3000 chars):\n{html[:3000]}")
             soup = BeautifulSoup(html, "html.parser")
             book = _try_json_ld(soup, KOBO_DAILY_DEAL_URL) or _try_html(soup, KOBO_DAILY_DEAL_URL)
             if book:
