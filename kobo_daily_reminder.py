@@ -34,8 +34,12 @@ _API_HEADERS = {
 # Book extraction helpers
 # ---------------------------------------------------------------------------
 
+_debug_item_printed = False  # print raw keys once only
+
+
 def _parse_book_item(item: dict, fallback_price: str = "NT$99") -> dict | None:
     """Parse one book item dict from Kobo's API. Returns None if no real book data."""
+    global _debug_item_printed
     title = item.get("Title") or item.get("title")
     if not title:
         return None
@@ -53,13 +57,28 @@ def _parse_book_item(item: dict, fallback_price: str = "NT$99") -> dict | None:
         c = contribs[0]
         author = (c.get("Name") or c.get("name")) if isinstance(c, dict) else str(c)
 
-    url = (
-        item.get("Uri") or item.get("uri")
-        or item.get("Url") or item.get("url")
-        or item.get("canonicalUrl")
-    )
-    if url and not url.startswith("http"):
-        url = f"https://www.kobo.com{url}"
+    # Debug: print raw keys once so we can find the URL field
+    if not _debug_item_printed:
+        _debug_item_printed = True
+        print(f"[ITEM_KEYS] {sorted(item.keys())}")
+        for k in item:
+            v = item[k]
+            if isinstance(v, str) and ("kobo" in v.lower() or "ebook" in v.lower() or "/tw/" in v.lower()):
+                print(f"[ITEM_URL_CANDIDATE] {k} = {v[:120]}")
+
+    url = None
+    for field in ("Uri", "uri", "Url", "url", "canonicalUrl", "CanonicalUrl",
+                  "ProductUrl", "productUrl", "Slug", "slug"):
+        val = item.get(field)
+        if val and isinstance(val, str) and len(val) > 3:
+            url = val if val.startswith("http") else f"https://www.kobo.com{val}"
+            break
+
+    # Construct from CrossProductId / Id if still no URL
+    if not url:
+        pid = item.get("CrossProductId") or item.get("crossProductId") or item.get("Id") or item.get("id")
+        if pid:
+            url = f"https://www.kobo.com/tw/zh/ebook/{pid}"
 
     price = None
     for pk in ("CurrentPrice", "SalePrice", "Price", "price"):
@@ -279,6 +298,41 @@ def get_open_library_rating(title: str, author: str | None = None) -> str | None
     return None
 
 
+def get_books_com_tw_rating(title: str) -> str | None:
+    """Search 博客來 for book rating (Taiwan's largest book site)."""
+    try:
+        search_url = f"https://search.books.com.tw/search/query/key/{quote(title)}/cat/BKM"
+        resp = requests.get(
+            search_url,
+            headers={
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+                "Accept-Language": "zh-TW,zh;q=0.9",
+                "Referer": "https://www.books.com.tw/",
+            },
+            timeout=15,
+        )
+        soup = BeautifulSoup(resp.text, "html.parser")
+        # 博客來 shows star ratings as "X.X 顆星" or in class "star-"
+        for item in soup.select(".item"):
+            rating_el = item.select_one(".rating-star, [class*='star']")
+            count_el = item.select_one(".num, [class*='num']")
+            if rating_el:
+                match = re.search(r"(\d+\.?\d*)", rating_el.get("style", "") + rating_el.get_text())
+                if match:
+                    count = count_el.get_text(strip=True) if count_el else ""
+                    count_str = f" ({count})" if count else ""
+                    return f"{match.group(1)}/5{count_str}"
+        # Fallback: look for rating text directly
+        rating_text = soup.select_one(".evaluate, .rating")
+        if rating_text:
+            match = re.search(r"(\d+\.\d+)", rating_text.get_text())
+            if match:
+                return f"{match.group(1)}/5"
+    except Exception as e:
+        print(f"博客來 error: {e}")
+    return None
+
+
 # ---------------------------------------------------------------------------
 # Message & LINE
 # ---------------------------------------------------------------------------
@@ -339,6 +393,8 @@ def main():
     print("Fetching ratings...")
 
     ratings: dict[str, str | None] = {}
+    ratings["博客來"] = get_books_com_tw_rating(book["title"])
+    time.sleep(1)
     ratings["Goodreads"] = get_goodreads_rating(book["title"], book.get("author"))
     time.sleep(1)
     ratings["Google Books"] = get_google_books_rating(book["title"], book.get("author"))
