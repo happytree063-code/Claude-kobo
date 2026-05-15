@@ -38,17 +38,17 @@ _API_HEADERS = {
 _debug_item_printed = False  # print raw keys once only
 
 
-def _parse_book_item(item: dict, fallback_price: str = "NT$99") -> dict | None:
-    """Parse one book item dict from Kobo's API. Returns None if no real book data."""
+def _parse_book_item(item: dict) -> dict | None:
+    """Parse one book item dict from Kobo's API. Returns None if not a real book."""
     global _debug_item_printed
-    title = item.get("Title") or item.get("title")
+    title = item.get("title") or item.get("Title")
     if not title:
         return None
 
-    # Must have contributors to be a real book (filters out promo banners)
+    # Must have authors to be a real book
     contribs = (
-        item.get("Contributors") or item.get("contributors")
-        or item.get("Authors") or item.get("authors")
+        item.get("authors") or item.get("Authors")
+        or item.get("Contributors") or item.get("contributors")
     )
     if not contribs:
         return None
@@ -56,50 +56,63 @@ def _parse_book_item(item: dict, fallback_price: str = "NT$99") -> dict | None:
     author = None
     if isinstance(contribs, list) and contribs:
         c = contribs[0]
-        author = (c.get("Name") or c.get("name")) if isinstance(c, dict) else str(c)
+        author = (c.get("name") or c.get("Name")) if isinstance(c, dict) else str(c)
 
-    # Debug: print raw keys once so we can find the URL field
-    if not _debug_item_printed:
-        _debug_item_printed = True
-        print(f"[ITEM_KEYS] {sorted(item.keys())}")
-        for k in item:
-            v = item[k]
-            if isinstance(v, str) and ("kobo" in v.lower() or "ebook" in v.lower() or "/tw/" in v.lower()):
-                print(f"[ITEM_URL_CANDIDATE] {k} = {v[:120]}")
-
+    # URL — itemPageUrl is the correct field (slug alone is not a full path)
     url = None
-    for field in ("Uri", "uri", "Url", "url", "canonicalUrl", "CanonicalUrl",
-                  "ProductUrl", "productUrl", "Slug", "slug"):
+    for field in ("itemPageUrl", "Uri", "uri", "Url", "url", "canonicalUrl", "CanonicalUrl", "ProductUrl"):
         val = item.get(field)
         if val and isinstance(val, str) and len(val) > 3:
             url = val if val.startswith("http") else f"https://www.kobo.com{val}"
             break
-
-    # Construct from CrossProductId / Id if still no URL
     if not url:
-        pid = item.get("CrossProductId") or item.get("crossProductId") or item.get("Id") or item.get("id")
-        if pid:
-            url = f"https://www.kobo.com/tw/zh/ebook/{pid}"
+        slug = item.get("slug") or item.get("Slug")
+        if slug:
+            url = f"https://www.kobo.com/tw/zh/ebook/{slug}"
 
+    # Price — field is "pricing" (dict), not "Price"
     price = None
-    for pk in ("CurrentPrice", "SalePrice", "Price", "price"):
-        p = item.get(pk)
-        if isinstance(p, dict):
-            amt = p.get("Amount") or p.get("amount")
-            if amt is not None:
-                price = f"NT${int(float(amt))}"; break
-        elif isinstance(p, (int, float)):
-            price = f"NT${int(p)}"; break
+    p = item.get("pricing") or item.get("CurrentPrice") or item.get("Price") or item.get("price")
+    if isinstance(p, dict):
+        amt = (
+            p.get("currentPrice") or p.get("CurrentPrice")
+            or p.get("salePrice") or p.get("SalePrice")
+            or p.get("Amount") or p.get("amount")
+            or p.get("TotalPrice") or p.get("totalPrice")
+        )
+        if amt is not None:
+            price = f"NT${int(float(amt))}"
+    elif isinstance(p, (int, float)):
+        price = f"NT${int(p)}"
+
+    # Rating — Kobo API includes it directly
+    kobo_rating = None
+    raw = item.get("rating")
+    if isinstance(raw, dict):
+        avg = raw.get("Average") or raw.get("average") or raw.get("Value") or raw.get("value")
+        cnt = raw.get("Count") or raw.get("count") or raw.get("RatingCount") or 0
+        if avg:
+            kobo_rating = f"{float(avg):.1f}/5 ({int(cnt):,} 則評分)" if cnt else f"{float(avg):.1f}/5"
+    elif isinstance(raw, (int, float)) and raw > 0:
+        kobo_rating = f"{raw:.1f}/5"
+
+    if not _debug_item_printed:
+        _debug_item_printed = True
+        print(f"[ITEM_KEYS] {sorted(item.keys())}")
+        print(f"[ITEM] price raw={item.get('pricing')} → parsed={price}")
+        print(f"[ITEM] rating raw={raw} → parsed={kobo_rating}")
+        print(f"[ITEM] url={url}")
 
     return {
         "title": title,
         "author": author or "未知作者",
-        "price": price or fallback_price,
+        "price": price,        # None means price unknown
         "url": url or KOBO_HOME_URL,
+        "kobo_rating": kobo_rating,
     }
 
 
-def _extract_books_from_featured_list(data: dict) -> list[dict]:
+def _extract_books_from_featured_list(data: dict) -> tuple[list[dict], str]:
     """Return all parseable books from a featured list API response."""
     list_name = data.get("Name") or data.get("name") or data.get("Title") or ""
     items = (
@@ -249,11 +262,11 @@ def _get_kobo_via_playwright() -> dict | None:
             data = resp.json()
 
             if "products/list/featured" in url:
-                # Capture full URL for later direct API use
                 print(f"[API] {url[:200]}")
+                is_spotlight = "Spotlight" in url
                 books, list_name = _extract_books_from_featured_list(data)
                 for b in books:
-                    found_books.append((list_name, b))
+                    found_books.append((is_spotlight, list_name, b))
         except Exception:
             pass
 
@@ -271,26 +284,28 @@ def _get_kobo_via_playwright() -> dict | None:
         try:
             page.goto(KOBO_HOME_URL, wait_until="domcontentloaded", timeout=30000)
             page.wait_for_timeout(10000)
-            print(f"[DEBUG] Total (list_name, book) pairs: {len(found_books)}")
+            print(f"[DEBUG] Total books: {len(found_books)}")
+            for is_sp, ln, b in found_books:
+                tag = "SPOTLIGHT" if is_sp else "LIST"
+                print(f"  [{tag}] price={b.get('price')} title={b.get('title','?')[:40]}")
 
-            # Priority 1: list name contains daily-deal keywords + 99 NT book
-            keywords = ["每日", "daily", "今日", "99", "book of the day"]
-            for list_name, book in found_books:
-                name_lower = list_name.lower()
-                if any(k in name_lower for k in keywords) and "99" in str(book.get("price", "")):
-                    print(f"[MATCH] Keyword match in '{list_name}': {book['title']}")
+            # Priority 1: Spotlight list + actual 99 NT price
+            for is_sp, ln, book in found_books:
+                if is_sp and book.get("price") == "NT$99":
+                    print(f"[MATCH] Spotlight 99 NT: {book['title']}")
                     return book
 
-            # Priority 2: any 99 NT book with real author
-            for list_name, book in found_books:
-                if "99" in str(book.get("price", "")) and book.get("author") != "未知作者":
-                    print(f"[MATCH] 99 NT book from '{list_name}': {book['title']}")
+            # Priority 2: Any list + actual 99 NT price
+            for is_sp, ln, book in found_books:
+                if book.get("price") == "NT$99":
+                    print(f"[MATCH] 99 NT from list: {book['title']}")
                     return book
 
-            # Priority 3: first book with real author from any list
-            for list_name, book in found_books:
-                if book.get("author") and book["author"] != "未知作者":
-                    print(f"[FALLBACK] First real book from '{list_name}': {book['title']}")
+            # Priority 3: Spotlight book (even without confirmed price)
+            for is_sp, ln, book in found_books:
+                if is_sp:
+                    book.setdefault("price", "NT$99")
+                    print(f"[FALLBACK] Spotlight book: {book['title']}")
                     return book
 
             return None
@@ -427,7 +442,7 @@ def build_message(book: dict, ratings: dict[str, str | None]) -> str:
         "─────────────────",
         f"📖 書名：{book.get('title', '未知書名')}",
         f"✍️  作者：{book.get('author', '未知作者')}",
-        f"💰 價格：{book.get('price', 'NT$99')}",
+        f"💰 價格：{book.get('price') or 'NT$99'}",
         "",
         "⭐ 各平台評分",
     ]
@@ -477,6 +492,8 @@ def main():
     print("Fetching ratings...")
 
     ratings: dict[str, str | None] = {}
+    if book.get("kobo_rating"):
+        ratings["Kobo"] = book["kobo_rating"]
     ratings["博客來"] = get_books_com_tw_rating(book["title"])
     time.sleep(1)
     ratings["Goodreads"] = get_goodreads_rating(book["title"], book.get("author"))
