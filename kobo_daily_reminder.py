@@ -302,8 +302,8 @@ def get_goodreads_rating(title: str, author: str | None = None) -> str | None:
     try:
         en_author = _extract_english_author(author) if author else None
         clean = _clean_title(title)
-        # Use English author name when available — Goodreads coverage is mostly English
-        query = f"{en_author} {clean}" if en_author else clean
+        # Use English-only query — Goodreads blocks mixed Chinese/English searches
+        query = en_author if en_author else clean
         resp = requests.get(
             f"https://www.goodreads.com/search?q={quote(query)}&search_type=books",
             headers={
@@ -333,14 +333,8 @@ def get_google_books_rating(title: str, author: str | None = None) -> str | None
     try:
         clean = _clean_title(title)
         en_author = _extract_english_author(author) if author else None
-        # English author query finds far more results than Chinese
-        if en_author:
-            q = f"inauthor:{en_author} {clean}"
-        else:
-            q = f"intitle:{clean}"
-            if author and author != "未知作者":
-                stripped = re.sub(r"^\[[^\]]+\]", "", author).strip()
-                q += f"+inauthor:{stripped}"
+        # Use English author only — mixing Chinese title confuses Google Books
+        q = f"inauthor:{en_author}" if en_author else f"intitle:{clean}"
         resp = requests.get(
             f"https://www.googleapis.com/books/v1/volumes?q={quote(q)}&maxResults=5",
             timeout=20,
@@ -356,6 +350,30 @@ def get_google_books_rating(title: str, author: str | None = None) -> str | None
                 return f"{rating}/5 ({count:,} 則評分)"
     except Exception as e:
         print(f"Google Books error: {e}")
+    return None
+
+
+def get_open_library_rating(title: str, author: str | None = None) -> str | None:
+    """Open Library is public, no auth required, good for English books."""
+    try:
+        en_author = _extract_english_author(author) if author else None
+        clean = _clean_title(title)
+        q = en_author if en_author else clean
+        resp = requests.get(
+            "https://openlibrary.org/search.json",
+            params={"q": q, "fields": "title,ratings_average,ratings_count", "limit": 5},
+            headers={"User-Agent": "Mozilla/5.0"},
+            timeout=15,
+        )
+        docs = resp.json().get("docs", [])
+        print(f"[Open Library] q={q[:50]}  results={len(docs)}")
+        for doc in docs:
+            avg = doc.get("ratings_average")
+            count = doc.get("ratings_count", 0)
+            if avg and float(avg) > 0 and count and int(count) > 0:
+                return f"{float(avg):.2f}/5 ({int(count):,} 則評分)"
+    except Exception as e:
+        print(f"Open Library error: {e}")
     return None
 
 
@@ -377,27 +395,31 @@ def get_books_com_tw_rating(title: str) -> str | None:
             },
             timeout=15,
         )
-        soup = BeautifulSoup(resp.text, "html.parser")
-        # Try multiple selectors — 博客來 HTML structure varies
-        items = (
-            soup.select("li.item")
-            or soup.select(".item")
-            or soup.select(".searchbook li")
-            or soup.select("ul.searchbook > li")
+        print(f"[博客來] status={resp.status_code}  q={clean[:20]}")
+        html = resp.text
+
+        # CSS-selector approach (works when structure is known)
+        soup = BeautifulSoup(html, "html.parser")
+        for star_el in soup.find_all(style=re.compile(r"width:\s*\d")):
+            style = star_el.get("style", "")
+            m = re.search(r"width:\s*(\d+(?:\.\d+)?)%", style)
+            if m:
+                pct = float(m.group(1))
+                # Star ratings are multiples of 20 (1★=20%…5★=100%)
+                if 20 <= pct <= 100 and pct % 10 == 0:
+                    return f"{round(pct / 20, 1)}/5"
+
+        # Regex fallback directly on raw HTML (handles obfuscated class names)
+        m = re.search(
+            r'(?:star|grade|rating)[^<]{0,200}?width:\s*(\d+(?:\.\d+)?)%',
+            html, re.IGNORECASE | re.DOTALL,
         )
-        print(f"[博客來] status={resp.status_code}  items={len(items)}  q={clean[:20]}")
-        if not items:
-            # Print a short HTML snippet for diagnosis
-            print(f"[博客來] HTML[0:300]: {resp.text[:300]!r}")
-        for item in items:
-            for star_sel in ("[class*='star']", ".grade span", ".star-rate", "span[style*='width']"):
-                rating_el = item.select_one(star_sel)
-                if rating_el:
-                    style = rating_el.get("style", "")
-                    m = re.search(r"width:\s*(\d+(?:\.\d+)?)%", style)
-                    if m:
-                        stars = round(float(m.group(1)) / 20, 1)
-                        return f"{stars}/5"
+        if m:
+            pct = float(m.group(1))
+            if 10 <= pct <= 100:
+                return f"{round(pct / 20, 1)}/5"
+
+        print(f"[博客來] no star rating found in page")
     except Exception as e:
         print(f"博客來 error: {e}")
     return None
@@ -486,9 +508,11 @@ def main():
             ratings["Kobo"] = book["kobo_rating"]
         ratings["博客來"] = get_books_com_tw_rating(title)
         time.sleep(0.5)
-        ratings["Goodreads"] = get_goodreads_rating(title, author)
-        time.sleep(0.5)
         ratings["Google Books"] = get_google_books_rating(title, author)
+        time.sleep(0.5)
+        ratings["Open Library"] = get_open_library_rating(title, author)
+        time.sleep(0.5)
+        ratings["Goodreads"] = get_goodreads_rating(title, author)
 
         print(f"     ratings: {ratings}")
         ratings_list.append(ratings)
