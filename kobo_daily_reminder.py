@@ -5,6 +5,8 @@ Kobo Daily 99 Book Reminder
 """
 
 import json
+import csv
+import io
 import os
 import re
 import sys
@@ -25,6 +27,12 @@ KOBO_ICAL_URL = (
     "%40group.calendar.google.com/public/basic.ics"
 )
 LINE_PUSH_URL = "https://api.line.me/v2/bot/message/push"
+# Public Google Sheet maintained by joanneinhk.com — Kobo 99 books with Goodreads/Amazon ratings
+JOANNEINHK_SHEET_CSV = (
+    "https://docs.google.com/spreadsheets/d/e/"
+    "2PACX-1vSzYRJXRm07AGxb15c7SNnMX9gup7HmodrJIyvGaa2eTpZE8n7Mo4FvnvxGKN9h6aWrwW-rDD1tC5zK"
+    "/pub?gid=722977077&single=true&output=csv"
+)
 
 _API_HEADERS = {
     "Accept": "application/json",
@@ -254,9 +262,7 @@ def get_kobo_daily_deal() -> list[dict]:
         )
         if match:
             print(f"  [ENRICH] '{ical['title'][:40]}' ← URL+author from Playwright")
-            enriched = dict(match)
-            enriched["price"] = "NT$99"  # iCal-confirmed deal price
-            result.append(enriched)
+            result.append(match)
         else:
             print(f"  [ICAL_ONLY] '{ical['title'][:40]}' — no Playwright match")
             result.append(ical)
@@ -276,6 +282,105 @@ def _clean_title(title: str) -> str:
     # Keep only the main title before ：or : (subtitle separator)
     title = re.split(r"[：:]", title)[0]
     return title.strip()
+
+
+def _get_sheet_ratings(title: str) -> dict[str, str | None]:
+    """Fetch pre-compiled ratings from joanneinhk.com's public Google Sheet.
+
+    Sheet columns (approximate): 日期 | 圖片 | 書名 | 原文名 | Kobo原價 | Kobo Plus |
+    Good Reads | (count) | Amazon | (count) | 誠墾 | (count) | 博客來 | (count)
+    """
+    try:
+        resp = requests.get(
+            JOANNEINHK_SHEET_CSV,
+            headers={"User-Agent": "Mozilla/5.0"},
+            timeout=20,
+        )
+        print(f"[Sheet] status={resp.status_code}  size={len(resp.text)}")
+        if resp.status_code != 200:
+            return {}
+
+        rows = list(csv.reader(io.StringIO(resp.text)))
+
+        # Debug: show first 2 rows to understand structure on first run
+        for i, row in enumerate(rows[:2]):
+            print(f"[Sheet] row[{i}]: {row}")
+
+        # Find header row containing 書名 and Good
+        header_idx = next(
+            (i for i, row in enumerate(rows) if any("書名" in c for c in row) and any("Good" in c for c in row)),
+            None,
+        )
+        if header_idx is None:
+            print("[Sheet] header row not found")
+            return {}
+
+        headers = rows[header_idx]
+        title_col = gr_col = amz_col = readmoo_col = books_col = None
+        for i, h in enumerate(headers):
+            h = h.strip()
+            if "書名" in h:
+                title_col = i
+            elif "Good" in h or "Reads" in h:
+                gr_col = i
+            elif "Amazon" in h or "Amz" in h:
+                amz_col = i
+            elif "誠" in h:
+                readmoo_col = i
+            elif "博客" in h:
+                books_col = i
+
+        print(f"[Sheet] cols → title={title_col} GR={gr_col} Amz={amz_col} 誠墾={readmoo_col} 博客來={books_col}")
+
+        # Match book by first 6 chars of cleaned title
+        key = _clean_title(title)[:6]
+        for row in rows[header_idx + 1:]:
+            if title_col is None or len(row) <= title_col:
+                continue
+            if _clean_title(row[title_col])[:6] != key:
+                continue
+
+            def _cell(col: int | None) -> str:
+                if col is None or len(row) <= col:
+                    return ""
+                return row[col].strip()
+
+            def _fmt(val_col: int | None, suffix: str = "/5") -> str | None:
+                val = _cell(val_col)
+                if not val or val.lower() in ("n/a", "-", ""):
+                    return None
+                # Next column is usually the review count
+                cnt = _cell(val_col + 1) if val_col is not None else ""
+                cnt = cnt.strip("() ")
+                count = f" ({cnt} 則評分)" if cnt and cnt.isdigit() and int(cnt) > 0 else ""
+                # 誠墾/博客來 already have 星 suffix; don't add /5
+                if "星" in val:
+                    return f"{val}{count}"
+                return f"{val}{suffix}{count}"
+
+            result = {}
+            gr = _fmt(gr_col)
+            if gr:
+                result["Goodreads"] = gr
+            amz = _fmt(amz_col)
+            if amz:
+                result["Amazon"] = amz
+            rm = _fmt(readmoo_col, suffix="")
+            if rm:
+                result["誠墾"] = rm
+            bc = _fmt(books_col, suffix="")
+            if bc:
+                result["博客來"] = bc
+
+            print(f"[Sheet] ratings for '{title[:30]}': {result}")
+            return result
+
+        print(f"[Sheet] '{key}' not found in sheet")
+        return {}
+
+    except Exception as e:
+        print(f"[Sheet] error: {e}")
+        return {}
 
 
 def _extract_english_author(author: str) -> str | None:
@@ -541,15 +646,20 @@ def main():
         ratings: dict[str, str | None] = {}
         if book.get("kobo_rating"):
             ratings["Kobo"] = book["kobo_rating"]
-        ratings["豆瓣"] = get_douban_rating(title)
-        time.sleep(0.5)
-        ratings["博客來"] = get_books_com_tw_rating(title)
-        time.sleep(0.5)
-        ratings["Google Books"] = get_google_books_rating(title, author)
-        time.sleep(0.5)
-        ratings["Open Library"] = get_open_library_rating(title, author)
-        time.sleep(0.5)
-        ratings["Goodreads"] = get_goodreads_rating(title, author)
+
+        # Primary: joanneinhk.com Google Sheet (pre-compiled Goodreads + Amazon ratings)
+        sheet = _get_sheet_ratings(title)
+        ratings.update(sheet)
+
+        # Fallback scrapers for books not yet in the sheet
+        if not sheet:
+            ratings["豆瓣"] = get_douban_rating(title)
+            time.sleep(0.5)
+            ratings["Google Books"] = get_google_books_rating(title, author)
+            time.sleep(0.5)
+            ratings["Open Library"] = get_open_library_rating(title, author)
+            time.sleep(0.5)
+            ratings["Goodreads"] = get_goodreads_rating(title, author)
 
         print(f"     ratings: {ratings}")
         ratings_list.append(ratings)
