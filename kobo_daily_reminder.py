@@ -352,7 +352,7 @@ def _get_sheet_ratings(title: str) -> dict[str, str | None]:
                 # Next column is usually the review count
                 cnt = _cell(val_col + 1) if val_col is not None else ""
                 cnt = cnt.strip("() ")
-                count = f" ({cnt} 則評分)" if cnt and cnt.isdigit() and int(cnt) > 0 else ""
+                count = f" ({cnt})" if cnt and cnt.isdigit() and int(cnt) > 0 else ""
                 if "星" in val:
                     return f"{val}{count}"
                 return f"{val}{suffix}{count}"
@@ -430,7 +430,7 @@ def get_goodreads_rating(title: str, author: str | None = None) -> str | None:
             match = re.search(r"(\d+\.\d+)", el.get_text())
             if match:
                 count_match = re.search(r"([\d,]+)\s*rating", el.get_text())
-                count = f" ({count_match.group(1)} 則評分)" if count_match else ""
+                count = f" ({count_match.group(1)})" if count_match else ""
                 return f"{match.group(1)}/5{count}"
     except Exception as e:
         print(f"Goodreads error: {e}")
@@ -455,7 +455,7 @@ def get_google_books_rating(title: str, author: str | None = None) -> str | None
             count = vi.get("ratingsCount", 0)
             print(f"[Google Books]   '{vi.get('title','?')[:40]}'  rating={rating}")
             if rating:
-                return f"{rating}/5 ({count:,} 則評分)"
+                return f"{rating}/5 ({count:,})"
     except Exception as e:
         print(f"Google Books error: {e}")
     return None
@@ -479,7 +479,7 @@ def get_open_library_rating(title: str, author: str | None = None) -> str | None
             avg = doc.get("ratings_average")
             count = doc.get("ratings_count", 0)
             if avg and float(avg) > 0 and count and int(count) > 0:
-                return f"{float(avg):.2f}/5 ({int(count):,} 則評分)"
+                return f"{float(avg):.2f}/5 ({int(count):,})"
     except Exception as e:
         print(f"Open Library error: {e}")
     return None
@@ -575,25 +575,45 @@ def get_books_com_tw_rating(title: str) -> str | None:
 NUMBER_ICONS = ["①", "②", "③", "④", "⑤"]
 
 
+def _shorten_url(url: str) -> str:
+    if url == KOBO_HOME_URL:
+        return url
+    try:
+        resp = requests.get(
+            f"https://tinyurl.com/api-create.php?url={quote(url, safe='')}",
+            timeout=8,
+        )
+        if resp.status_code == 200 and resp.text.strip().startswith("http"):
+            return resp.text.strip()
+    except Exception:
+        pass
+    return url
+
+
 def build_message(books: list[dict], ratings_list: list[dict[str, str | None]]) -> str:
-    lines = ["📚 今日 Kobo 每日 99 元好書", "─────────────────"]
+    today = date.today()
+    lines = [f"{today.month}/{today.day} Kobo 每日 99 元好書", "─────────────────"]
 
     for i, (book, ratings) in enumerate(zip(books, ratings_list)):
+        lines.append("")
+        title = book.get("title", "未知書名")
         if len(books) > 1:
-            lines.append(f"\n{NUMBER_ICONS[i] if i < len(NUMBER_ICONS) else str(i+1)} {book.get('title', '未知書名')}")
+            icon = NUMBER_ICONS[i] if i < len(NUMBER_ICONS) else str(i + 1)
+            lines.append(f"📖 {icon} {title}")
         else:
-            lines.append(f"📖 書名：{book.get('title', '未知書名')}")
-
-        lines.append(f"✍️  作者：{book.get('author', '未知作者')}")
-        lines.append(f"💰 價格：{book.get('price') or 'NT$99'}")
+            lines.append(f"📖 {title}")
+        lines.append("")
+        lines.append(f"✍️{book.get('author', '未知作者')}")
+        lines.append(f"💰 {book.get('price') or 'NT$99'}")
 
         rated = {k: v for k, v in ratings.items() if v}
         if rated:
-            lines.append("⭐ 評分：" + " | ".join(f"{p} {r}" for p, r in rated.items()))
-        else:
-            lines.append("⭐ 評分：（暫無資料）")
+            lines.append("")
+            for platform, rating in rated.items():
+                lines.append(f"✨{platform} {rating}")
 
-        lines.append(f"🔗 {book.get('url', KOBO_HOME_URL)}")
+        lines.append("")
+        lines.append(f"🔗 {_shorten_url(book.get('url', KOBO_HOME_URL))}")
 
     return "\n".join(lines)
 
@@ -654,7 +674,7 @@ def main():
         sheet = _get_sheet_ratings(title)
         # Use sheet's original price as fallback when Playwright didn't provide one
         sheet_price = sheet.pop("_kobo_price", None)
-        if sheet_price and not book.get("price"):
+        if sheet_price and book.get("price") in (None, "NT$99"):
             book["price"] = sheet_price
         ratings.update(sheet)
 
