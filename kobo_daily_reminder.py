@@ -287,8 +287,9 @@ def _clean_title(title: str) -> str:
 def _get_sheet_ratings(title: str) -> dict[str, str | None]:
     """Fetch pre-compiled ratings from joanneinhk.com's public Google Sheet.
 
-    Sheet columns (approximate): 日期 | 圖片 | 書名 | 原文名 | Kobo原價 | Kobo Plus |
-    Good Reads | (count) | Amazon | (count) | 誠墾 | (count) | 博客來 | (count)
+    Sheet columns (confirmed): 日期 | 圖片 | 書名 | 原文名 | Kobo原價 | Kobo Plus |
+    (empty) | Good Reads | (count) | (empty) | Amazon | (count) | (empty) |
+    讀墨 | (count) | (empty) | 博客來 | (count)
     """
     try:
         resp = requests.get(
@@ -296,15 +297,12 @@ def _get_sheet_ratings(title: str) -> dict[str, str | None]:
             headers={"User-Agent": "Mozilla/5.0"},
             timeout=20,
         )
-        print(f"[Sheet] status={resp.status_code}  size={len(resp.text)}")
+        print(f"[Sheet] status={resp.status_code}  size={len(resp.content)}")
         if resp.status_code != 200:
             return {}
 
-        rows = list(csv.reader(io.StringIO(resp.text)))
-
-        # Debug: show first 2 rows to understand structure on first run
-        for i, row in enumerate(rows[:2]):
-            print(f"[Sheet] row[{i}]: {row}")
+        # Must decode as UTF-8 explicitly — requests may default to Latin-1
+        rows = list(csv.reader(io.StringIO(resp.content.decode("utf-8"))))
 
         # Find header row containing 書名 and Good
         header_idx = next(
@@ -312,11 +310,11 @@ def _get_sheet_ratings(title: str) -> dict[str, str | None]:
             None,
         )
         if header_idx is None:
-            print("[Sheet] header row not found")
+            print(f"[Sheet] header row not found; row[0]={rows[0][:5] if rows else '[]'}")
             return {}
 
         headers = rows[header_idx]
-        title_col = gr_col = amz_col = readmoo_col = books_col = None
+        title_col = gr_col = amz_col = readmoo_col = books_col = price_col = None
         for i, h in enumerate(headers):
             h = h.strip()
             if "書名" in h:
@@ -325,12 +323,14 @@ def _get_sheet_ratings(title: str) -> dict[str, str | None]:
                 gr_col = i
             elif "Amazon" in h or "Amz" in h:
                 amz_col = i
-            elif "誠" in h:
+            elif "讀" in h or "誠" in h:    # 讀墨 or 誠墾
                 readmoo_col = i
             elif "博客" in h:
                 books_col = i
+            elif "原價" in h or "Kobo" in h and price_col is None:
+                price_col = i
 
-        print(f"[Sheet] cols → title={title_col} GR={gr_col} Amz={amz_col} 誠墾={readmoo_col} 博客來={books_col}")
+        print(f"[Sheet] cols → title={title_col} GR={gr_col} Amz={amz_col} 讀墨={readmoo_col} 博客來={books_col} 原價={price_col}")
 
         # Match book by first 6 chars of cleaned title
         key = _clean_title(title)[:6]
@@ -353,12 +353,11 @@ def _get_sheet_ratings(title: str) -> dict[str, str | None]:
                 cnt = _cell(val_col + 1) if val_col is not None else ""
                 cnt = cnt.strip("() ")
                 count = f" ({cnt} 則評分)" if cnt and cnt.isdigit() and int(cnt) > 0 else ""
-                # 誠墾/博客來 already have 星 suffix; don't add /5
                 if "星" in val:
                     return f"{val}{count}"
                 return f"{val}{suffix}{count}"
 
-            result = {}
+            result: dict[str, str | None] = {}
             gr = _fmt(gr_col)
             if gr:
                 result["Goodreads"] = gr
@@ -367,10 +366,14 @@ def _get_sheet_ratings(title: str) -> dict[str, str | None]:
                 result["Amazon"] = amz
             rm = _fmt(readmoo_col, suffix="")
             if rm:
-                result["誠墾"] = rm
+                result["讀墨"] = rm
             bc = _fmt(books_col, suffix="")
             if bc:
                 result["博客來"] = bc
+            # Original price — used as fallback when Playwright fails
+            p = _cell(price_col)
+            if p and p.isdigit():
+                result["_kobo_price"] = f"NT${p}"
 
             print(f"[Sheet] ratings for '{title[:30]}': {result}")
             return result
@@ -649,6 +652,10 @@ def main():
 
         # Primary: joanneinhk.com Google Sheet (pre-compiled Goodreads + Amazon ratings)
         sheet = _get_sheet_ratings(title)
+        # Use sheet's original price as fallback when Playwright didn't provide one
+        sheet_price = sheet.pop("_kobo_price", None)
+        if sheet_price and not book.get("price"):
+            book["price"] = sheet_price
         ratings.update(sheet)
 
         # Fallback scrapers for books not yet in the sheet
