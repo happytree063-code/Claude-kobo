@@ -592,7 +592,7 @@ def _shorten_url(url: str) -> str:
 
 def build_message(books: list[dict], ratings_list: list[dict[str, str | None]]) -> str:
     today = date.today()
-    lines = [f"{today.month}/{today.day} Kobo 每日 99 元好書", "─────────────────"]
+    lines = [f"{today.month}/{today.day} Kobo 每日 99 元好書", "─────────────"]
 
     for i, (book, ratings) in enumerate(zip(books, ratings_list)):
         lines.append("")
